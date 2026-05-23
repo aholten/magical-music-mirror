@@ -19,6 +19,42 @@ from themes.ruleset.conway import VARIANTS
 WINDOW_W, WINDOW_H = 1280, 720
 TARGET_FPS = 60
 
+# Hue-cycling: a pixel that stays alive (non-black) accumulates one tick
+# of age per frame, which advances its hue by `HUE_STEP_DEG` degrees.
+# Dead pixels reset to age 0 and re-enter at the base color. Tunes how
+# fast the color drift feels: 1.0° → full rotation in 360 frames (~6 s
+# at 60 fps), 0.5° → ~12 s, 2.0° → ~3 s.
+HUE_STEP_DEG = 1.0
+HUE_TABLE_SIZE = 360
+BASE_COLOR_RGB = np.array([0, 110, 70], dtype=np.float32)
+
+
+def _build_hue_table() -> np.ndarray:
+    """Precompute the hue-rotated RGB triple for every integer-degree offset.
+
+    Uses the standard luminance-preserving RGB hue-rotation matrix; output is
+    a (HUE_TABLE_SIZE, 3) uint8 array indexed by `age % HUE_TABLE_SIZE`.
+    """
+    table = np.zeros((HUE_TABLE_SIZE, 3), dtype=np.uint8)
+    sqrt3 = np.sqrt(3)
+    for i in range(HUE_TABLE_SIZE):
+        theta = np.deg2rad(i * HUE_STEP_DEG)
+        c, s = np.cos(theta), np.sin(theta)
+        m_diag = c + (1 - c) / 3
+        m_low = (1 - c) / 3 - s / sqrt3
+        m_high = (1 - c) / 3 + s / sqrt3
+        matrix = np.array([
+            [m_diag, m_low, m_high],
+            [m_high, m_diag, m_low],
+            [m_low, m_high, m_diag],
+        ])
+        rotated = matrix @ BASE_COLOR_RGB
+        table[i] = np.clip(rotated, 0, 255).astype(np.uint8)
+    return table
+
+
+HUE_TABLE = _build_hue_table()
+
 
 # --- Layouts -----------------------------------------------------------------
 #
@@ -94,6 +130,10 @@ def main():
     x_off = (WINDOW_W - scaled_w) // 2
     y_off = (WINDOW_H - scaled_h) // 2
 
+    # Per-pixel age counter for hue cycling. Reset to 0 on any frame where
+    # the pixel is black (dead Conway cell and no audio); otherwise +1.
+    age = np.zeros((out_h, out_w), dtype=np.int32)
+
     try:
         running = True
         while running:
@@ -105,7 +145,15 @@ def main():
             audio_small = audio_render.render(audio_frame, (audio_h, audio_w))
             audio_layer = audio_transform(audio_small)
             ruleset_out = ruleset.step(prev_frame=None, audio_layer=audio_layer)
-            display = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
+            composed = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
+
+            # Age cycling: increment age where pixel is alive (any non-zero
+            # channel) and reset to 0 where dead. Then recolor every alive
+            # pixel via the hue table indexed by its current age.
+            alive = composed.any(axis=-1)
+            age = np.where(alive, age + 1, 0)
+            display = HUE_TABLE[age % HUE_TABLE_SIZE]
+            display = np.where(alive[..., None], display, np.uint8(0))
 
             pygame.surfarray.blit_array(src_surface, np.transpose(display, (1, 0, 2)))
             scaled = pygame.transform.scale(src_surface, (scaled_w, scaled_h))

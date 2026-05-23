@@ -17,7 +17,7 @@ class BarMeter:
         smoothing: float = 0.6,
         bars: int = 48,
         gap: int = 1,
-        fft_size: int = 4096,
+        fft_size: int = 8192,
     ):
         self.samplerate = samplerate
         self.smoothing = smoothing
@@ -25,20 +25,22 @@ class BarMeter:
         self.gap = gap
         self.fft_size = fft_size
         self._prev_heights: np.ndarray | None = None
-        self._fft_buf = np.zeros(fft_size, dtype=np.float32)
 
     def render(self, audio_frame: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
         h, w = shape
-        n = len(audio_frame)
-        if n < 4:
+        if len(audio_frame) < 4:
             return np.zeros((h, w, 3), dtype=np.uint8)
 
-        # Roll the new chunk into the FFT buffer so we always FFT fft_size samples.
-        n = min(n, self.fft_size)
-        self._fft_buf = np.roll(self._fft_buf, -n)
-        self._fft_buf[-n:] = audio_frame[-n:]
+        # Take the most recent fft_size samples from the capture's ring
+        # buffer. AudioCapture owns the rolling history; we just slice.
+        if len(audio_frame) >= self.fft_size:
+            samples = audio_frame[-self.fft_size:]
+        else:
+            samples = np.concatenate(
+                [np.zeros(self.fft_size - len(audio_frame), dtype=np.float32), audio_frame]
+            )
 
-        windowed = self._fft_buf * np.hanning(self.fft_size)
+        windowed = samples * np.hanning(self.fft_size)
         spec = np.abs(np.fft.rfft(windowed))
 
         # log-spaced bin edges from 40 Hz to nyquist, across self.bars bands
