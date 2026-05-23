@@ -269,12 +269,14 @@ def main():
         "--warp-fade-vocal",
         type=float,
         default=0.75,
-        help="How much sustained vocal-range content (200–4000 Hz) modulates "
-        "the warp fade. Positive = vocals SHORTEN trails (clear-out look); "
-        "negative = vocals LENGTHEN trails (dreamy/atmospheric). 0.0 = off. "
-        "0.75 (default) = up to 75%% trail cut at peak vocals. "
-        "-1.0 = trails double in length during vocals. "
-        "Effective range clamped internally to [0.1×, 4.0×] base fade.",
+        help="How sustained vocal-range content (200–4000 Hz) modulates "
+        "warp trail length. The sign picks which end of the vocal axis "
+        "kills the trails: "
+        "+1.0 = vocals kill trails (silence keeps base trails), "
+        " 0.0 = no modulation (constant base trails), "
+        "-1.0 = silence kills trails (vocals revive them). "
+        "Values between scale the effect proportionally. At either "
+        "extreme, the trail-length multiplier can reach 0 (fully off).",
     )
     args = ap.parse_args()
 
@@ -368,20 +370,31 @@ def main():
             focal_y = center_y + (0.5 - audio_render.centroid) * out_h * args.warp_focus_range
             warp_y_float = focal_y * warp_y_focal_factor + warp_y_index_part
 
-            # Dynamic warp fade: sustained vocal-range energy modulates the
+            # Dynamic warp fade: sustained vocal-range energy modulates
             # trail length. Raw vocal_energy in real music sits in
-            # ~[0.25, 0.55] so we stretch around 0.30 by 3× to get a
-            # usable [0, 1] modulation signal.
+            # ~[0.25, 0.55]; stretch around 0.30 by 3× to get a usable
+            # [0, 1] modulation signal.
             #
-            # Positive WARP_FADE_VOCAL shortens trails on vocals (clear-out);
-            # negative lengthens them (atmospheric). The trail-length
-            # multiplier is clamped to [0.1, 4.0] so extreme values can't
-            # collapse trails to a single frame or blow them up to seconds
-            # of unbounded accumulation.
+            # Sign of WARP_FADE_VOCAL picks WHICH end of the vocal axis
+            # kills trails:
+            #   +1.0  vocals kill trails  (silence = base, vocals = no trails)
+            #    0.0  no modulation       (constant base trails)
+            #   -1.0  silence kills trails (silence = no trails, vocals = base)
+            # Either extreme can drive trails fully to zero — when the
+            # multiplier hits ~0 we skip the warp blend entirely so dead
+            # pixels just show the background.
             stretched_vocal = max(0.0, min(1.0, (audio_render.vocal_energy - 0.30) * 3.0))
-            mult = max(0.1, min(4.0, 1.0 - args.warp_fade_vocal * stretched_vocal))
-            fade_ticks_dyn = max(1, int(args.warp_fade_ticks * mult))
-            warp_dim = 0.01 ** (1.0 / fade_ticks_dyn)
+            v = args.warp_fade_vocal
+            if v >= 0:
+                mult = 1.0 - v * stretched_vocal
+            else:
+                mult = 1.0 + v * (1.0 - stretched_vocal)
+            mult = max(0.0, min(4.0, mult))
+            if mult < 0.01:
+                warp_dim = 0.0  # trails off — warped will collapse to bg
+            else:
+                fade_ticks_dyn = max(1, int(args.warp_fade_ticks * mult))
+                warp_dim = 0.01 ** (1.0 / fade_ticks_dyn)
 
             # Warp echo: zoom the previous frame outward from the (dynamic)
             # focal with per-frame stochastic rounding (sub-pixel dither),
