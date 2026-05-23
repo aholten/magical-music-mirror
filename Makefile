@@ -15,7 +15,7 @@ WARP_DITHER          ?= 1.0
 WARP_FOCUS_RANGE       ?= 0.6
 WARP_FOCUS_SMOOTHING   ?= 0.30
 WARP_FOCUS_TREBLE_BIAS ?= 3.0
-WARP_FADE_VOCAL        ?= 0.5
+WARP_FADE_VOCAL        ?= 0.75
 
 .PHONY: help run devices install clean
 

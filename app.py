@@ -268,12 +268,13 @@ def main():
     ap.add_argument(
         "--warp-fade-vocal",
         type=float,
-        default=0.5,
+        default=0.75,
         help="How much sustained vocal-range content (200–4000 Hz) shortens "
         "the warp fade. 0.0 = no modulation (fade is constant). "
-        "0.5 = up to 50%% fade-ticks cut at peak vocal energy. 1.0 = trails "
-        "can collapse to almost nothing during sustained singing. "
-        "Negative values lengthen trails during vocals instead.",
+        "0.75 = up to 75%% fade-ticks cut at peak vocal energy (default — "
+        "trails noticeably collapse on held vocals). 1.0 = trails approach "
+        "instant fade. Negative values lengthen trails during vocals "
+        "instead (dreamy/atmospheric).",
     )
     args = ap.parse_args()
 
@@ -368,11 +369,15 @@ def main():
             warp_y_float = focal_y * warp_y_focal_factor + warp_y_index_part
 
             # Dynamic warp fade: sustained vocal-range energy shortens the
-            # trail length, so vocals "clear out" the warp accumulation
-            # instead of smearing through it.
+            # trail length so vocals "clear out" the warp accumulation
+            # instead of smearing through it. Raw vocal_energy in real
+            # music sits in ~[0.25, 0.55] — stretch around 0.30 by 3× so
+            # held vocals reach near 1.0 (full modulation) and quiet
+            # instrumental moments stay near 0 (no modulation).
+            stretched_vocal = max(0.0, min(1.0, (audio_render.vocal_energy - 0.30) * 3.0))
             fade_ticks_dyn = max(
                 1,
-                int(args.warp_fade_ticks * (1.0 - args.warp_fade_vocal * audio_render.vocal_energy)),
+                int(args.warp_fade_ticks * (1.0 - args.warp_fade_vocal * stretched_vocal)),
             )
             warp_dim = 0.01 ** (1.0 / fade_ticks_dyn)
 

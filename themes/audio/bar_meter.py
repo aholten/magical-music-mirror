@@ -51,7 +51,7 @@ class BarMeter:
         # short transients in that band don't spike it. Exposed for the
         # main loop to modulate effects like warp fade.
         self.vocal_energy: float = 0.0
-        self._vocal_smoothing = 0.88
+        self._vocal_smoothing = 0.80
         log_lo = np.log10(40.0)
         log_hi = np.log10(max(samplerate / 2.0, 41.0))
         def _bar_for_freq(f):
