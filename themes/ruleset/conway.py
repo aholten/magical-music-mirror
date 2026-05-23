@@ -19,10 +19,23 @@ CONWAY_GENES = [
 ]
 
 
+def _vshift(grid: np.ndarray, dy: int) -> np.ndarray:
+    """Vertical neighbor shift with zero (dead) padding — no top/bottom wrap."""
+    if dy == 0:
+        return grid
+    out = np.zeros_like(grid)
+    if dy == -1:
+        out[:-1] = grid[1:]   # row y reads from row y+1; last row sees dead
+    else:                     # dy == 1
+        out[1:] = grid[:-1]   # row y reads from row y-1; row 0 sees dead
+    return out
+
+
 def _step_conway(grid: np.ndarray) -> np.ndarray:
-    """One step of Conway's B3/S23 with wraparound borders."""
+    """One step of Conway's B3/S23. Horizontal axis wraps; vertical axis
+    has hard top/bottom boundaries (cells beyond the edge are dead)."""
     neighbors = sum(
-        np.roll(np.roll(grid, dy, axis=0), dx, axis=1)
+        np.roll(_vshift(grid, dy), dx, axis=1)
         for dy in (-1, 0, 1)
         for dx in (-1, 0, 1)
         if (dy, dx) != (0, 0)
