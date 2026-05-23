@@ -19,6 +19,7 @@ class BarMeter:
         bars: int = 48,
         fft_size: int = 8192,
         centroid_smoothing: float = 0.30,
+        centroid_treble_bias: float = 3.0,
     ):
         # Asymmetric smoothing: attack governs how much the previous height
         # influences a NEW MAX (going up); release governs the descent. 0.0
@@ -37,6 +38,13 @@ class BarMeter:
         # `centroid_smoothing` = snappier response (0.0 = raw, ~no smoothing).
         self.centroid: float = 0.5
         self._centroid_smoothing = centroid_smoothing
+        # Treble bias counteracts the bass-dominated nature of raw FFT
+        # magnitudes — without this, the centroid hugs the low end even
+        # during treble-heavy material. Linear ramp: bin 0 weighted 1×,
+        # bin (bars-1) weighted (1 + bias)×. bias=0 → unweighted centroid.
+        self._centroid_weights = (
+            1.0 + centroid_treble_bias * np.arange(bars, dtype=np.float32) / max(1, bars - 1)
+        )
 
     def render(self, audio_frame: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
         h, w = shape
@@ -76,13 +84,15 @@ class BarMeter:
             heights = np.where(going_up, up, down)
         self._prev_heights = heights
 
-        # Spectral centroid in normalized bar-index space [0, 1]. Hold the
-        # previous value when nothing's playing rather than snapping to 0.5,
-        # so quiet moments don't lurch the warp focal back to center.
-        total = float(heights.sum())
+        # Spectral centroid in normalized bar-index space [0, 1]. Pre-weight
+        # heights with the treble-bias ramp so high-frequency bars actually
+        # influence the result. Hold the previous value when silent so the
+        # warp focal doesn't lurch back to center between songs.
+        weighted = heights * self._centroid_weights
+        total = float(weighted.sum())
         if total > 1e-6 and self.bars > 1:
             indices = np.arange(self.bars, dtype=np.float32)
-            raw_centroid = float((heights * indices).sum() / total / (self.bars - 1))
+            raw_centroid = float((weighted * indices).sum() / total / (self.bars - 1))
             self.centroid = (
                 self._centroid_smoothing * self.centroid
                 + (1 - self._centroid_smoothing) * raw_centroid

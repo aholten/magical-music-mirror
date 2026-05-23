@@ -12,8 +12,9 @@ FADE_TICKS    ?= 120
 WARP_ZOOM            ?= 1.04
 WARP_FADE_TICKS      ?= 63
 WARP_DITHER          ?= 1.0
-WARP_FOCUS_RANGE     ?= 0.6
-WARP_FOCUS_SMOOTHING ?= 0.30
+WARP_FOCUS_RANGE       ?= 0.6
+WARP_FOCUS_SMOOTHING   ?= 0.30
+WARP_FOCUS_TREBLE_BIAS ?= 3.0
 
 .PHONY: help run devices install clean
 
@@ -44,6 +45,8 @@ help:
 	@echo "  make run WARP_FOCUS_RANGE=0.5       # focal can reach the top/bottom edges"
 	@echo "  make run WARP_FOCUS_SMOOTHING=0.0   # raw, instant (very twitchy)"
 	@echo "  make run WARP_FOCUS_SMOOTHING=0.7   # slow leisurely drift"
+	@echo "  make run WARP_FOCUS_TREBLE_BIAS=0.0 # raw centroid (heavily bass-skewed)"
+	@echo "  make run WARP_FOCUS_TREBLE_BIAS=6.0 # heavy treble emphasis"
 	@echo "  make run WARP_ZOOM=1.0          # disable warp motion (no trails)"
 	@echo "  make run DEVICE='Built-in Input'"
 
@@ -61,7 +64,8 @@ run: install
 		--palette-curve $(PALETTE_CURVE) --fade-ticks $(FADE_TICKS) \
 		--warp-zoom $(WARP_ZOOM) --warp-fade-ticks $(WARP_FADE_TICKS) \
 		--warp-dither $(WARP_DITHER) --warp-focus-range $(WARP_FOCUS_RANGE) \
-		--warp-focus-smoothing $(WARP_FOCUS_SMOOTHING)
+		--warp-focus-smoothing $(WARP_FOCUS_SMOOTHING) \
+		--warp-focus-treble-bias $(WARP_FOCUS_TREBLE_BIAS)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"

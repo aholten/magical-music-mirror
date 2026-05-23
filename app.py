@@ -255,6 +255,16 @@ def main():
         "focal. 0.0 = raw, instant response (snappy/twitchy). 0.30 = brief "
         "smoothing (snappy default). 0.70 = leisurely drift. 0.90 = lazy.",
     )
+    ap.add_argument(
+        "--warp-focus-treble-bias",
+        type=float,
+        default=3.0,
+        help="Counteracts the bass-dominated FFT magnitudes that pull the "
+        "centroid (and thus the warp focal) toward the low end. 0.0 = raw "
+        "centroid (heavily bass-skewed). 3.0 = treble bins count 4× bass "
+        "(balanced default). 5.0+ = treble-led motion. Higher = hats and "
+        "cymbals yank the focal up more aggressively.",
+    )
     args = ap.parse_args()
 
     palette = PALETTES[args.palette]
@@ -282,6 +292,7 @@ def main():
     audio_render = BarMeter(
         samplerate=args.samplerate,
         centroid_smoothing=args.warp_focus_smoothing,
+        centroid_treble_bias=args.warp_focus_treble_bias,
     )
     ruleset = VARIANTS[args.ruleset]((out_h, out_w))
     print(f"[startup] ruleset {args.ruleset} initialized at {(out_h, out_w)}", flush=True)
@@ -340,14 +351,10 @@ def main():
             ruleset_out = ruleset.step(prev_frame=None, audio_layer=audio_layer)
             composed = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
 
-            # Dynamic warp focal: shift y based on the spectral centroid so
-            # bass-heavy content emanates from the lower half and treble
-            # content emanates from the upper half. Real music's centroid
-            # hovers in ~[0.15, 0.55], so we stretch around the empirical
-            # neutral (0.35) by 2.5× to recover most of the [0, 1] swing,
-            # then clamp. Without this stretch the focal barely budges.
-            stretched = max(0.0, min(1.0, (audio_render.centroid - 0.35) * 2.5 + 0.5))
-            focal_y = center_y + (0.5 - stretched) * out_h * args.warp_focus_range
+            # Dynamic warp focal: shift y based on the centroid (already
+            # treble-biased + smoothed inside BarMeter) so bass-heavy
+            # content emanates from below center and treble from above.
+            focal_y = center_y + (0.5 - audio_render.centroid) * out_h * args.warp_focus_range
             warp_y_float = focal_y * warp_y_focal_factor + warp_y_index_part
 
             # Warp echo: zoom the previous frame outward from the (dynamic)
