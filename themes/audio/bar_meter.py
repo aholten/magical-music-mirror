@@ -18,6 +18,7 @@ class BarMeter:
         release: float = 0.65,
         bars: int = 48,
         fft_size: int = 8192,
+        centroid_smoothing: float = 0.30,
     ):
         # Asymmetric smoothing: attack governs how much the previous height
         # influences a NEW MAX (going up); release governs the descent. 0.0
@@ -32,9 +33,10 @@ class BarMeter:
         self._prev_heights: np.ndarray | None = None
         # Smoothed spectral centroid in [0, 1]: 0 = all energy in bass, 1 =
         # all energy in treble. Updated each render(); 0.5 when silent so
-        # consumers (e.g. dynamic warp focal) see a neutral neutral default.
+        # consumers (e.g. dynamic warp focal) see a neutral default. Lower
+        # `centroid_smoothing` = snappier response (0.0 = raw, ~no smoothing).
         self.centroid: float = 0.5
-        self._centroid_smoothing = 0.80
+        self._centroid_smoothing = centroid_smoothing
 
     def render(self, audio_frame: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
         h, w = shape

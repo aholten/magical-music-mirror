@@ -247,6 +247,14 @@ def main():
         "0.6 = up to ±30%%, 1.0 = focal can reach the edges. Negative "
         "values flip the direction.",
     )
+    ap.add_argument(
+        "--warp-focus-smoothing",
+        type=float,
+        default=0.30,
+        help="Temporal smoothing applied to the centroid that drives the warp "
+        "focal. 0.0 = raw, instant response (snappy/twitchy). 0.30 = brief "
+        "smoothing (snappy default). 0.70 = leisurely drift. 0.90 = lazy.",
+    )
     args = ap.parse_args()
 
     palette = PALETTES[args.palette]
@@ -271,7 +279,10 @@ def main():
     capture.start()
     print("[startup] audio stream started", flush=True)
 
-    audio_render = BarMeter(samplerate=args.samplerate)
+    audio_render = BarMeter(
+        samplerate=args.samplerate,
+        centroid_smoothing=args.warp_focus_smoothing,
+    )
     ruleset = VARIANTS[args.ruleset]((out_h, out_w))
     print(f"[startup] ruleset {args.ruleset} initialized at {(out_h, out_w)}", flush=True)
 

@@ -9,10 +9,11 @@ RESOLUTION    ?= 1
 PALETTE       ?= sunset
 PALETTE_CURVE ?= 2.0
 FADE_TICKS    ?= 120
-WARP_ZOOM         ?= 1.04
-WARP_FADE_TICKS   ?= 63
-WARP_DITHER       ?= 1.0
-WARP_FOCUS_RANGE  ?= 0.6
+WARP_ZOOM            ?= 1.04
+WARP_FADE_TICKS      ?= 63
+WARP_DITHER          ?= 1.0
+WARP_FOCUS_RANGE     ?= 0.6
+WARP_FOCUS_SMOOTHING ?= 0.30
 
 .PHONY: help run devices install clean
 
@@ -39,8 +40,10 @@ help:
 	@echo "  make run WARP_FADE_TICKS=300    # long lingering warp streams (5s)"
 	@echo "  make run WARP_DITHER=0.0        # disable warp dithering"
 	@echo "  make run WARP_DITHER=2.0        # heavier film-grain texture"
-	@echo "  make run WARP_FOCUS_RANGE=0.0   # static warp focal (no audio reactivity)"
-	@echo "  make run WARP_FOCUS_RANGE=0.5   # focal can reach the top/bottom edges"
+	@echo "  make run WARP_FOCUS_RANGE=0.0       # static warp focal (no audio reactivity)"
+	@echo "  make run WARP_FOCUS_RANGE=0.5       # focal can reach the top/bottom edges"
+	@echo "  make run WARP_FOCUS_SMOOTHING=0.0   # raw, instant (very twitchy)"
+	@echo "  make run WARP_FOCUS_SMOOTHING=0.7   # slow leisurely drift"
 	@echo "  make run WARP_ZOOM=1.0          # disable warp motion (no trails)"
 	@echo "  make run DEVICE='Built-in Input'"
 
@@ -57,7 +60,8 @@ run: install
 		--resolution $(RESOLUTION) --palette $(PALETTE) \
 		--palette-curve $(PALETTE_CURVE) --fade-ticks $(FADE_TICKS) \
 		--warp-zoom $(WARP_ZOOM) --warp-fade-ticks $(WARP_FADE_TICKS) \
-		--warp-dither $(WARP_DITHER) --warp-focus-range $(WARP_FOCUS_RANGE)
+		--warp-dither $(WARP_DITHER) --warp-focus-range $(WARP_FOCUS_RANGE) \
+		--warp-focus-smoothing $(WARP_FOCUS_SMOOTHING)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"
