@@ -60,7 +60,9 @@ class BarMeter:
         self._prev_heights = heights
 
         # Render bars-with-gaps across the grid width: each bar gets a uniform
-        # column slot, leaving `gap` empty grid columns between slots.
+        # column slot, leaving `gap` empty grid columns between slots. Color
+        # matches the Conway alive-cell color in the compositor so bars look
+        # like stacks of the same "stuff" Conway is made of.
         frame = np.zeros((h, w, 3), dtype=np.uint8)
         slot = max(1, w // self.bars)
         bar_w = max(1, slot - self.gap)
@@ -69,10 +71,5 @@ class BarMeter:
             x0 = i * slot
             x1 = min(x0 + bar_w, w)
             top = h - rows_lit[i]
-            for y in range(top, h):
-                t = (h - y) / h  # 0 at bottom, 1 at top
-                r = int(60 + 195 * t)
-                g = int(20 + 60 * (1 - t))
-                b = int(255 - 100 * t)
-                frame[y, x0:x1] = (r, g, b)
+            frame[top:h, x0:x1] = (0, 110, 70)
         return frame
