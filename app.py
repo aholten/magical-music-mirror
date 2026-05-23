@@ -113,14 +113,21 @@ def main():
     out_h, out_w = layout["output_shape"]
     audio_transform = layout["audio_transform"]
 
+    print(f"[startup] opening audio device: {args.device!r}", flush=True)
     capture = AudioCapture(device=args.device, samplerate=args.samplerate)
+    print("[startup] starting audio stream", flush=True)
     capture.start()
+    print("[startup] audio stream started", flush=True)
 
     audio_render = BarMeter(samplerate=args.samplerate)
     ruleset = VARIANTS[args.ruleset]((out_h, out_w))
+    print(f"[startup] ruleset {args.ruleset} initialized at {(out_h, out_w)}", flush=True)
 
+    print("[startup] pygame.init()", flush=True)
     pygame.init()
+    print("[startup] opening window", flush=True)
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
+    print("[startup] window open, entering main loop", flush=True)
     pygame.display.set_caption(f"MagicalMusicMirror — {args.layout} / {args.ruleset}")
     clock = pygame.time.Clock()
     src_surface = pygame.Surface((out_w, out_h))
