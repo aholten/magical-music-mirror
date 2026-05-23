@@ -147,12 +147,12 @@ def main():
         "1.08 = aggressive (echoes fly off-screen fast).",
     )
     ap.add_argument(
-        "--warp-dim",
-        type=float,
-        default=0.93,
-        help="Per-frame brightness decay (toward BG_COLOR) applied to the warp "
-        "echo. 1.0 = echoes never decay (trails fill the screen). "
-        "0.93 = ~1s visible trail at 60fps. 0.85 = short, snappy trails.",
+        "--warp-fade-ticks",
+        type=int,
+        default=63,
+        help="Frames for the warp echo to decay to ~1%% intensity (visually "
+        "gone). Smaller = snappy short trails. Larger = lingering streams. "
+        "At 60fps: 30=0.5s, 63=1s, 120=2s, 300=5s.",
     )
     ap.add_argument(
         "--warp-dither",
@@ -167,6 +167,11 @@ def main():
 
     fade_table = _build_fade_table(SUNSET_STOPS, args.fade_ticks)
     bg_pixel = np.array(BG_COLOR, dtype=np.uint8)
+
+    # Convert warp_fade_ticks → per-frame brightness multiplier such that
+    # multiplier ** ticks ≈ 0.01 (the echo reaches 1% intensity at `ticks`
+    # frames). Matches FADE_TICKS' "frames-to-fade" semantics.
+    warp_dim = 0.01 ** (1.0 / max(1, args.warp_fade_ticks))
 
     layout = LAYOUTS[args.layout]
     audio_h, audio_w = layout["audio_shape"]
@@ -238,7 +243,7 @@ def main():
             np.clip(sy, 0, out_h - 1, out=sy)
             np.clip(sx, 0, out_w - 1, out=sx)
             warped = prev_display[sy, sx].astype(np.float32)
-            warped = warped * args.warp_dim + bg_float * (1.0 - args.warp_dim)
+            warped = warped * warp_dim + bg_float * (1.0 - warp_dim)
             warped = warped.clip(0, 255).astype(np.uint8)
 
             # Age the alive pixels and look up their faded color. New births
