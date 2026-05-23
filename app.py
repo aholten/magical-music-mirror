@@ -20,25 +20,44 @@ WINDOW_W, WINDOW_H = 1280, 720
 TARGET_FPS = 60
 
 # Night-sky background and warm pale-yellow alive color. Alive pixels start
-# at ALIVE_COLOR (age 0) and linearly blend toward BG_COLOR as they age,
-# reaching the background after --fade-ticks frames — so persistent regions
-# slowly "fade into the night". On death, age resets to 0 and the pixel
-# disappears into the background until something brings it back to life.
+# at ALIVE_COLOR (age 0) and progress through a sunset palette as they age,
+# arriving at BG_COLOR after --fade-ticks frames — so persistent regions
+# drift from the pale sun through warm gold, orange, magenta, deep purple,
+# and into the night. On death, age resets to 0 and the pixel disappears
+# into the background until something brings it back to life.
 BG_COLOR = (10, 14, 36)
 ALIVE_COLOR = (250, 240, 190)
 
+# Piecewise-linear sunset palette. Evenly spaced across the alive lifetime.
+# Tweak the middle stops to taste; first must be ALIVE_COLOR, last BG_COLOR.
+SUNSET_STOPS = [
+    ALIVE_COLOR,        # 0%   — pale yellow sun
+    (255, 215, 130),    # ~14% — warm gold
+    (255, 155, 70),     # ~29% — orange
+    (235, 95, 70),      # ~43% — coral / red-orange
+    (190, 55, 100),     # ~57% — magenta
+    (110, 45, 120),     # ~71% — deep purple
+    (40, 30, 80),       # ~86% — twilight blue-violet
+    BG_COLOR,           # 100% — night
+]
 
-def _build_fade_table(alive_rgb: tuple, bg_rgb: tuple, ticks: int) -> np.ndarray:
-    """Linear-blend table: table[i] is the color at age i (clamped to ticks).
 
-    Index 0 = full alive color; index `ticks` = full background.
+def _build_fade_table(stops: list, ticks: int) -> np.ndarray:
+    """Piecewise-linear interpolation through `stops` over `ticks+1` entries.
+
+    Returns a (ticks+1, 3) uint8 lookup table indexed by clamped age:
+    `table[0] == stops[0]` and `table[ticks] == stops[-1]`.
     """
     ticks = max(1, ticks)
-    ages = np.arange(ticks + 1, dtype=np.float32).reshape(-1, 1)
-    t = ages / ticks  # 0 → 1 across the table
-    alive = np.array(alive_rgb, dtype=np.float32).reshape(1, 3)
-    bg = np.array(bg_rgb, dtype=np.float32).reshape(1, 3)
-    return ((1 - t) * alive + t * bg).clip(0, 255).astype(np.uint8)
+    stops_arr = np.asarray(stops, dtype=np.float32)
+    # Evenly distribute the stops across the [0, ticks] x-axis.
+    stop_x = np.linspace(0, ticks, len(stops))
+    ages = np.arange(ticks + 1, dtype=np.float32)
+    table = np.stack(
+        [np.interp(ages, stop_x, stops_arr[:, c]) for c in range(3)],
+        axis=1,
+    )
+    return table.clip(0, 255).astype(np.uint8)
 
 
 def _build_warp_map(h: int, w: int, zoom: float, focal_y: int, focal_x: int):
@@ -129,7 +148,7 @@ def main():
     )
     args = ap.parse_args()
 
-    fade_table = _build_fade_table(ALIVE_COLOR, BG_COLOR, args.fade_ticks)
+    fade_table = _build_fade_table(SUNSET_STOPS, args.fade_ticks)
     bg_pixel = np.array(BG_COLOR, dtype=np.uint8)
 
     layout = LAYOUTS[args.layout]
