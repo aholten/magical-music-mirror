@@ -183,6 +183,15 @@ def main():
     ap.add_argument("--device", help="Input device name or index (e.g. 'BlackHole 2ch')")
     ap.add_argument("--ruleset", default="conway11", choices=VARIANTS.keys())
     ap.add_argument("--layout", default="dual-mirror", choices=LAYOUTS.keys())
+    ap.add_argument(
+        "--resolution",
+        type=int,
+        default=1,
+        help="Integer multiplier on the layout's grid size. 1 = chunky (90×160 "
+        "for dual-mirror), 2 = double res, 4 = smooth, 8 = nearly per-window-"
+        "pixel. Higher costs more CPU per frame (Conway step + warp sample + "
+        "audio render all scale roughly with grid area).",
+    )
     ap.add_argument("--palette", default="sunset", choices=PALETTES.keys())
     ap.add_argument(
         "--palette-curve",
@@ -241,8 +250,9 @@ def main():
     warp_dim = 0.01 ** (1.0 / max(1, args.warp_fade_ticks))
 
     layout = LAYOUTS[args.layout]
-    audio_h, audio_w = layout["audio_shape"]
-    out_h, out_w = layout["output_shape"]
+    res = max(1, args.resolution)
+    audio_h, audio_w = (d * res for d in layout["audio_shape"])
+    out_h, out_w = (d * res for d in layout["output_shape"])
     audio_transform = layout["audio_transform"]
 
     print(f"[startup] opening audio device: {args.device!r}", flush=True)

@@ -5,6 +5,7 @@ PIP     := $(VENV)/bin/pip
 DEVICE        ?= BlackHole 2ch
 RULESET       ?= conway11
 LAYOUT        ?= dual-mirror
+RESOLUTION    ?= 1
 PALETTE       ?= sunset
 PALETTE_CURVE ?= 2.0
 FADE_TICKS    ?= 120
@@ -24,6 +25,8 @@ help:
 	@echo "Examples:"
 	@echo "  make run RULESET=conway10"
 	@echo "  make run LAYOUT=butterfly"
+	@echo "  make run RESOLUTION=2          # double grid detail"
+	@echo "  make run RESOLUTION=4          # smooth (CPU heavier)"
 	@echo "  make run PALETTE=ocean         # also: fire, neon, forest, monochrome"
 	@echo "  make run PALETTE_CURVE=1.0     # linear palette walk (even color time)"
 	@echo "  make run PALETTE_CURVE=3.0     # aggressive front-load (dark tones dominate)"
@@ -48,8 +51,8 @@ install: $(VENV)/bin/activate
 
 run: install
 	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET) --layout $(LAYOUT) \
-		--palette $(PALETTE) --palette-curve $(PALETTE_CURVE) \
-		--fade-ticks $(FADE_TICKS) \
+		--resolution $(RESOLUTION) --palette $(PALETTE) \
+		--palette-curve $(PALETTE_CURVE) --fade-ticks $(FADE_TICKS) \
 		--warp-zoom $(WARP_ZOOM) --warp-fade-ticks $(WARP_FADE_TICKS) \
 		--warp-dither $(WARP_DITHER)
 
