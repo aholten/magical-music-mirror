@@ -4,18 +4,20 @@ PIP     := $(VENV)/bin/pip
 
 DEVICE  ?= BlackHole 2ch
 RULESET ?= conway11
+LAYOUT  ?= dual-mirror
 
 .PHONY: help run devices install clean
 
 help:
 	@echo "Targets:"
 	@echo "  make install     create .venv and install deps"
-	@echo "  make run         run the visualizer (DEVICE='$(DEVICE)' RULESET=$(RULESET))"
+	@echo "  make run         run the visualizer (DEVICE='$(DEVICE)' RULESET=$(RULESET) LAYOUT=$(LAYOUT))"
 	@echo "  make devices     list audio input devices"
 	@echo "  make clean       remove .venv"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run RULESET=conway10"
+	@echo "  make run LAYOUT=butterfly"
 	@echo "  make run DEVICE='Built-in Input'"
 
 $(VENV)/bin/activate: requirements.txt
@@ -27,7 +29,7 @@ $(VENV)/bin/activate: requirements.txt
 install: $(VENV)/bin/activate
 
 run: install
-	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET)
+	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET) --layout $(LAYOUT)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"
