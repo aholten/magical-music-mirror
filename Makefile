@@ -2,11 +2,12 @@ VENV    := .venv
 PY      := $(VENV)/bin/python
 PIP     := $(VENV)/bin/pip
 
-DEVICE     ?= BlackHole 2ch
-RULESET    ?= conway11
-LAYOUT     ?= dual-mirror
-PALETTE    ?= sunset
-FADE_TICKS ?= 120
+DEVICE        ?= BlackHole 2ch
+RULESET       ?= conway11
+LAYOUT        ?= dual-mirror
+PALETTE       ?= sunset
+PALETTE_CURVE ?= 2.0
+FADE_TICKS    ?= 120
 WARP_ZOOM       ?= 1.04
 WARP_FADE_TICKS ?= 63
 WARP_DITHER     ?= 1.0
@@ -23,7 +24,9 @@ help:
 	@echo "Examples:"
 	@echo "  make run RULESET=conway10"
 	@echo "  make run LAYOUT=butterfly"
-	@echo "  make run PALETTE=ocean     # also: fire, neon, forest, monochrome"
+	@echo "  make run PALETTE=ocean         # also: fire, neon, forest, monochrome"
+	@echo "  make run PALETTE_CURVE=1.0     # linear palette walk (even color time)"
+	@echo "  make run PALETTE_CURVE=3.0     # aggressive front-load (dark tones dominate)"
 	@echo "  make run FADE_TICKS=60   # quick fade — 1s at 60fps"
 	@echo "  make run FADE_TICKS=600  # slow trails — 10s at 60fps"
 	@echo "  make run WARP_ZOOM=1.02         # subtle warp drift"
@@ -45,7 +48,8 @@ install: $(VENV)/bin/activate
 
 run: install
 	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET) --layout $(LAYOUT) \
-		--palette $(PALETTE) --fade-ticks $(FADE_TICKS) \
+		--palette $(PALETTE) --palette-curve $(PALETTE_CURVE) \
+		--fade-ticks $(FADE_TICKS) \
 		--warp-zoom $(WARP_ZOOM) --warp-fade-ticks $(WARP_FADE_TICKS) \
 		--warp-dither $(WARP_DITHER)
 

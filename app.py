@@ -84,16 +84,28 @@ PALETTES = {
 }
 
 
-def _build_fade_table(stops: list, ticks: int) -> np.ndarray:
+def _build_fade_table(stops: list, ticks: int, curve: float = 1.0) -> np.ndarray:
     """Piecewise-linear interpolation through `stops` over `ticks+1` entries.
 
-    Returns a (ticks+1, 3) uint8 lookup table indexed by clamped age:
-    `table[0] == stops[0]` and `table[ticks] == stops[-1]`.
+    `curve` controls how stops are distributed across [0, ticks]:
+      1.0   linear — every stop gets equal screen time.
+      >1.0  exponential decay — early stops rush past, later stops linger.
+            Sunset-like: yellow→orange blasts through quickly while the deep
+            purples + twilight take most of the visible lifetime.
+      <1.0  slow start, fast end — colors creep in gradually then collapse.
+
+    The first stop is always at age 0 and the last stop at age `ticks`,
+    regardless of curve.
     """
     ticks = max(1, ticks)
     stops_arr = np.asarray(stops, dtype=np.float32)
-    # Evenly distribute the stops across the [0, ticks] x-axis.
-    stop_x = np.linspace(0, ticks, len(stops))
+    curve = max(0.01, curve)
+    # Stop positions along [0, ticks]. Linear linspace ** curve packs the
+    # early stops near 0 (so age=0..small advances through many stops)
+    # while pushing the last toward ticks. With curve=1 this reduces to
+    # the original even distribution.
+    positions = np.linspace(0, 1, len(stops)) ** curve
+    stop_x = positions * ticks
     ages = np.arange(ticks + 1, dtype=np.float32)
     table = np.stack(
         [np.interp(ages, stop_x, stops_arr[:, c]) for c in range(3)],
@@ -172,6 +184,16 @@ def main():
     ap.add_argument("--ruleset", default="conway11", choices=VARIANTS.keys())
     ap.add_argument("--layout", default="dual-mirror", choices=LAYOUTS.keys())
     ap.add_argument("--palette", default="sunset", choices=PALETTES.keys())
+    ap.add_argument(
+        "--palette-curve",
+        type=float,
+        default=2.0,
+        help="How non-linearly the palette is walked across an alive pixel's "
+        "lifetime. 1.0 = linear (every color gets equal time). "
+        "2.0 = exponential-decay feel (bright early colors rush past, dark "
+        "tones linger — sunset-like). 3.0+ = aggressive front-load. "
+        "0.5 = the opposite (slow start, sudden collapse to background).",
+    )
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument(
         "--fade-ticks",
@@ -210,7 +232,7 @@ def main():
 
     palette = PALETTES[args.palette]
     bg_color = palette[-1]  # last stop = background
-    fade_table = _build_fade_table(palette, args.fade_ticks)
+    fade_table = _build_fade_table(palette, args.fade_ticks, curve=args.palette_curve)
     bg_pixel = np.array(bg_color, dtype=np.uint8)
 
     # Convert warp_fade_ticks → per-frame brightness multiplier such that
