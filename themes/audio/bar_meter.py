@@ -14,13 +14,20 @@ class BarMeter:
     def __init__(
         self,
         samplerate: int = 44100,
-        smoothing: float = 0.6,
+        attack: float = 0.0,
+        release: float = 0.78,
         bars: int = 48,
         gap: int = 1,
         fft_size: int = 8192,
     ):
+        # Asymmetric smoothing: attack governs how much the previous height
+        # influences a NEW MAX (going up); release governs the descent. 0.0
+        # = instant snap up to the new value, 0.78 = drop ~22% of the gap
+        # per frame on the way down (≈140 ms half-life @ 60 fps). This makes
+        # transients punch through instantly while keeping decay smooth.
         self.samplerate = samplerate
-        self.smoothing = smoothing
+        self.attack = attack
+        self.release = release
         self.bars = bars
         self.gap = gap
         self.fft_size = fft_size
@@ -58,7 +65,10 @@ class BarMeter:
         heights = np.clip(heights, 0, 1)
 
         if self._prev_heights is not None:
-            heights = self.smoothing * self._prev_heights + (1 - self.smoothing) * heights
+            going_up = heights > self._prev_heights
+            up = self.attack * self._prev_heights + (1 - self.attack) * heights
+            down = self.release * self._prev_heights + (1 - self.release) * heights
+            heights = np.where(going_up, up, down)
         self._prev_heights = heights
 
         # Render bars-with-gaps across the grid width: each bar gets a uniform
