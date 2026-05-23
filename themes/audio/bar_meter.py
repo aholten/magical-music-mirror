@@ -46,6 +46,19 @@ class BarMeter:
             1.0 + centroid_treble_bias * np.arange(bars, dtype=np.float32) / max(1, bars - 1)
         )
 
+        # Proportion of total energy in the vocal band (200–4000 Hz),
+        # heavily smoothed so sustained singing builds the value up while
+        # short transients in that band don't spike it. Exposed for the
+        # main loop to modulate effects like warp fade.
+        self.vocal_energy: float = 0.0
+        self._vocal_smoothing = 0.88
+        log_lo = np.log10(40.0)
+        log_hi = np.log10(max(samplerate / 2.0, 41.0))
+        def _bar_for_freq(f):
+            return int(np.clip(round((np.log10(f) - log_lo) / (log_hi - log_lo) * (bars - 1)), 0, bars - 1))
+        self._vocal_lo = _bar_for_freq(200.0)
+        self._vocal_hi = _bar_for_freq(4000.0) + 1
+
     def render(self, audio_frame: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
         h, w = shape
         if len(audio_frame) < 4:
@@ -96,6 +109,18 @@ class BarMeter:
             self.centroid = (
                 self._centroid_smoothing * self.centroid
                 + (1 - self._centroid_smoothing) * raw_centroid
+            )
+
+        # Vocal-band energy proportion (raw heights, no treble weighting —
+        # we want absolute proportion of total energy sitting in 200–4000 Hz,
+        # not a perceptual reweight). Heavily smoothed so this captures
+        # sustained vocal-range content rather than transient hits.
+        raw_total = float(heights.sum())
+        if raw_total > 1e-6:
+            vocal_now = float(heights[self._vocal_lo : self._vocal_hi].sum() / raw_total)
+            self.vocal_energy = (
+                self._vocal_smoothing * self.vocal_energy
+                + (1 - self._vocal_smoothing) * vocal_now
             )
 
         # Tile the full grid width with `bars` contiguous columns. Slot edges

@@ -265,6 +265,16 @@ def main():
         "(balanced default). 5.0+ = treble-led motion. Higher = hats and "
         "cymbals yank the focal up more aggressively.",
     )
+    ap.add_argument(
+        "--warp-fade-vocal",
+        type=float,
+        default=0.5,
+        help="How much sustained vocal-range content (200–4000 Hz) shortens "
+        "the warp fade. 0.0 = no modulation (fade is constant). "
+        "0.5 = up to 50%% fade-ticks cut at peak vocal energy. 1.0 = trails "
+        "can collapse to almost nothing during sustained singing. "
+        "Negative values lengthen trails during vocals instead.",
+    )
     args = ap.parse_args()
 
     palette = PALETTES[args.palette]
@@ -272,9 +282,9 @@ def main():
     fade_table = _build_fade_table(palette, args.fade_ticks, curve=args.palette_curve)
     bg_pixel = np.array(bg_color, dtype=np.uint8)
 
-    # Convert warp_fade_ticks → per-frame brightness multiplier such that
-    # multiplier ** ticks ≈ 0.01 (the echo reaches 1% intensity at `ticks`
-    # frames). Matches FADE_TICKS' "frames-to-fade" semantics.
+    # warp_dim is recomputed each frame from a vocal-modulated fade_ticks
+    # value (see main loop). The base/static value below is just an initial
+    # placeholder before the loop runs.
     warp_dim = 0.01 ** (1.0 / max(1, args.warp_fade_ticks))
 
     layout = LAYOUTS[args.layout]
@@ -356,6 +366,15 @@ def main():
             # content emanates from below center and treble from above.
             focal_y = center_y + (0.5 - audio_render.centroid) * out_h * args.warp_focus_range
             warp_y_float = focal_y * warp_y_focal_factor + warp_y_index_part
+
+            # Dynamic warp fade: sustained vocal-range energy shortens the
+            # trail length, so vocals "clear out" the warp accumulation
+            # instead of smearing through it.
+            fade_ticks_dyn = max(
+                1,
+                int(args.warp_fade_ticks * (1.0 - args.warp_fade_vocal * audio_render.vocal_energy)),
+            )
+            warp_dim = 0.01 ** (1.0 / fade_ticks_dyn)
 
             # Warp echo: zoom the previous frame outward from the (dynamic)
             # focal with per-frame stochastic rounding (sub-pixel dither),
