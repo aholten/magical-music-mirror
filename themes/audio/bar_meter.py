@@ -34,7 +34,7 @@ class BarMeter:
         # all energy in treble. Updated each render(); 0.5 when silent so
         # consumers (e.g. dynamic warp focal) see a neutral neutral default.
         self.centroid: float = 0.5
-        self._centroid_smoothing = 0.88
+        self._centroid_smoothing = 0.80
 
     def render(self, audio_frame: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
         h, w = shape

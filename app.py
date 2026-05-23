@@ -240,11 +240,12 @@ def main():
     ap.add_argument(
         "--warp-focus-range",
         type=float,
-        default=0.3,
+        default=0.6,
         help="How far the warp focal point drifts vertically from the grid "
         "center, as a fraction of grid height, driven by the spectral "
         "centroid (bass = down, treble = up). 0.0 = static center, "
-        "0.3 = ±15%% of height, 0.5 = up to ±25%% (focal can reach the edges).",
+        "0.6 = up to ±30%%, 1.0 = focal can reach the edges. Negative "
+        "values flip the direction.",
     )
     args = ap.parse_args()
 
@@ -330,9 +331,12 @@ def main():
 
             # Dynamic warp focal: shift y based on the spectral centroid so
             # bass-heavy content emanates from the lower half and treble
-            # content emanates from the upper half. centroid==0.5 keeps the
-            # focal at the geometric center.
-            focal_y = center_y + (0.5 - audio_render.centroid) * out_h * args.warp_focus_range
+            # content emanates from the upper half. Real music's centroid
+            # hovers in ~[0.15, 0.55], so we stretch around the empirical
+            # neutral (0.35) by 2.5× to recover most of the [0, 1] swing,
+            # then clamp. Without this stretch the focal barely budges.
+            stretched = max(0.0, min(1.0, (audio_render.centroid - 0.35) * 2.5 + 0.5))
+            focal_y = center_y + (0.5 - stretched) * out_h * args.warp_focus_range
             warp_y_float = focal_y * warp_y_focal_factor + warp_y_index_part
 
             # Warp echo: zoom the previous frame outward from the (dynamic)

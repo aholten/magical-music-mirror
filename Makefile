@@ -12,7 +12,7 @@ FADE_TICKS    ?= 120
 WARP_ZOOM         ?= 1.04
 WARP_FADE_TICKS   ?= 63
 WARP_DITHER       ?= 1.0
-WARP_FOCUS_RANGE  ?= 0.3
+WARP_FOCUS_RANGE  ?= 0.6
 
 .PHONY: help run devices install clean
 
