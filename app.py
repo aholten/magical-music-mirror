@@ -22,42 +22,43 @@ TARGET_FPS = 60
 
 # --- Layouts -----------------------------------------------------------------
 #
-# Each layout owns:
-#   render_shape: (H, W) that AudioRender + RenderRuleset draw onto
-#   transform:    callable(np.ndarray) -> np.ndarray, applied per frame to
-#                 produce the displayed image
-#   output_shape: (H, W) of the transform output, used for sizing the pygame
-#                 source surface and computing the window-fit scale
+# A layout splits the pipeline in two:
+#   audio_shape:     (H, W) AudioRender draws onto (just the audio bars)
+#   audio_transform: callable(small_audio) -> output-sized audio frame; produces
+#                    the mirrored/rotated bar layout
+#   output_shape:    (H, W) of the final visible frame; the RenderRuleset
+#                    (Conway) runs at this full size, so its pattern is one
+#                    continuous field across the entire screen rather than a
+#                    per-half copy.
 #
-# Conway runs at render_shape; the transform only ever combines copies of the
-# composed frame, so the two halves of a mirror are pixel-identical except
-# for the layout's translation/rotation.
+# Compose then mixes the mirrored audio frame and the full-screen ruleset
+# frame at output_shape.
 
 
-def butterfly_transform(frame: np.ndarray) -> np.ndarray:
+def butterfly_transform(audio: np.ndarray) -> np.ndarray:
     """Rotate 90° CCW + horizontal mirror. Bars extend outward from a
     vertical center line; bass at bottom, treble at top."""
-    rotated = np.rot90(frame, k=1)
+    rotated = np.rot90(audio, k=1)
     return np.concatenate([rotated, np.fliplr(rotated)], axis=1)
 
 
-def dual_mirror_transform(frame: np.ndarray) -> np.ndarray:
+def dual_mirror_transform(audio: np.ndarray) -> np.ndarray:
     """Stack the rendered half-frame against its 180° rotation. Bottom
     visualizer: bass-left/treble-right, bars grow up toward the middle.
     Top visualizer: treble-left/bass-right, bars grow down toward the
-    middle. Both visualizers reach only as far as the horizontal midline."""
-    return np.concatenate([np.rot90(frame, k=2), frame], axis=0)
+    middle. Both reach only to the horizontal midline."""
+    return np.concatenate([np.rot90(audio, k=2), audio], axis=0)
 
 
 LAYOUTS = {
     "butterfly": {
-        "render_shape": (90, 160),
-        "transform": butterfly_transform,
+        "audio_shape": (90, 160),
+        "audio_transform": butterfly_transform,
         "output_shape": (160, 180),
     },
     "dual-mirror": {
-        "render_shape": (45, 160),
-        "transform": dual_mirror_transform,
+        "audio_shape": (45, 160),
+        "audio_transform": dual_mirror_transform,
         "output_shape": (90, 160),
     },
 }
@@ -72,15 +73,15 @@ def main():
     args = ap.parse_args()
 
     layout = LAYOUTS[args.layout]
-    render_h, render_w = layout["render_shape"]
+    audio_h, audio_w = layout["audio_shape"]
     out_h, out_w = layout["output_shape"]
-    transform = layout["transform"]
+    audio_transform = layout["audio_transform"]
 
     capture = AudioCapture(device=args.device, samplerate=args.samplerate)
     capture.start()
 
     audio_render = BarMeter(samplerate=args.samplerate)
-    ruleset = VARIANTS[args.ruleset]((render_h, render_w))
+    ruleset = VARIANTS[args.ruleset]((out_h, out_w))
 
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
@@ -101,10 +102,10 @@ def main():
                     running = False
 
             audio_frame = capture.latest()
-            audio_layer = audio_render.render(audio_frame, (render_h, render_w))
+            audio_small = audio_render.render(audio_frame, (audio_h, audio_w))
+            audio_layer = audio_transform(audio_small)
             ruleset_out = ruleset.step(prev_frame=None, audio_layer=audio_layer)
-            final = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
-            display = transform(final)
+            display = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
 
             pygame.surfarray.blit_array(src_surface, np.transpose(display, (1, 0, 2)))
             scaled = pygame.transform.scale(src_surface, (scaled_w, scaled_h))
