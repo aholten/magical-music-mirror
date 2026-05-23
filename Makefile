@@ -16,6 +16,7 @@ WARP_FOCUS_RANGE       ?= 0.6
 WARP_FOCUS_SMOOTHING   ?= 0.30
 WARP_FOCUS_TREBLE_BIAS ?= 3.0
 WARP_FADE_VOCAL        ?= 0.75
+DEBUG                  ?=
 
 .PHONY: help run devices install clean
 
@@ -53,6 +54,7 @@ help:
 	@echo "  make run WARP_FADE_VOCAL=1.0       # vocals fully kill trails (silence = base)"
 	@echo "  make run WARP_FADE_VOCAL=-0.5      # silence partially shortens trails"
 	@echo "  make run WARP_FADE_VOCAL=-1.0      # silence fully kills trails (vocals = base)"
+	@echo "  make run DEBUG=1                   # print live audio-feature values to stderr"
 	@echo "  make run WARP_ZOOM=1.0          # disable warp motion (no trails)"
 	@echo "  make run DEVICE='Built-in Input'"
 
@@ -72,7 +74,8 @@ run: install
 		--warp-dither $(WARP_DITHER) --warp-focus-range $(WARP_FOCUS_RANGE) \
 		--warp-focus-smoothing $(WARP_FOCUS_SMOOTHING) \
 		--warp-focus-treble-bias $(WARP_FOCUS_TREBLE_BIAS) \
-		--warp-fade-vocal $(WARP_FADE_VOCAL)
+		--warp-fade-vocal $(WARP_FADE_VOCAL) \
+		$(if $(DEBUG),--debug)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"

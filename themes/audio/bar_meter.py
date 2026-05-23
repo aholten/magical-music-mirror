@@ -111,13 +111,16 @@ class BarMeter:
                 + (1 - self._centroid_smoothing) * raw_centroid
             )
 
-        # Vocal-band energy proportion (raw heights, no treble weighting —
-        # we want absolute proportion of total energy sitting in 200–4000 Hz,
-        # not a perceptual reweight). Heavily smoothed so this captures
-        # sustained vocal-range content rather than transient hits.
-        raw_total = float(heights.sum())
-        if raw_total > 1e-6:
-            vocal_now = float(heights[self._vocal_lo : self._vocal_hi].sum() / raw_total)
+        # Vocal-band level: absolute mean height of bars in 200–4000 Hz.
+        # Earlier we used "proportion of total energy in vocal band", but
+        # log-compressed heights stay flat (mid/total ≈ 0.48 always),
+        # so the proportion barely moved with vocals. Absolute level drops
+        # to near 0 during silence and rises sharply on loud mid-range
+        # content (which vocals almost always are), giving a much more
+        # responsive modulation signal. Heavily smoothed so it tracks
+        # sustained content rather than transient drum hits.
+        if self.bars > 1:
+            vocal_now = float(heights[self._vocal_lo : self._vocal_hi].mean())
             self.vocal_energy = (
                 self._vocal_smoothing * self.vocal_energy
                 + (1 - self._vocal_smoothing) * vocal_now

@@ -205,6 +205,13 @@ def main():
     )
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print live audio-feature values (centroid, vocal_energy, "
+        "stretched_vocal, fade_ticks_dyn) to stderr ~3× per second so "
+        "you can verify what the modulators are actually reading.",
+    )
+    ap.add_argument(
         "--fade-ticks",
         type=int,
         default=120,
@@ -351,9 +358,11 @@ def main():
     prev_display = np.empty((out_h, out_w, 3), dtype=np.uint8)
     prev_display[:] = bg_pixel
 
+    frame_count = 0
     try:
         running = True
         while running:
+            frame_count += 1
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                     running = False
@@ -370,20 +379,21 @@ def main():
             focal_y = center_y + (0.5 - audio_render.centroid) * out_h * args.warp_focus_range
             warp_y_float = focal_y * warp_y_focal_factor + warp_y_index_part
 
-            # Dynamic warp fade: sustained vocal-range energy modulates
-            # trail length. Raw vocal_energy in real music sits in
-            # ~[0.25, 0.55]; stretch around 0.30 by 3× to get a usable
-            # [0, 1] modulation signal.
+            # Dynamic warp fade: vocal-range level modulates trail length.
+            # vocal_energy is the smoothed absolute mid-band level (0..~0.7);
+            # stretch around 0.20 by 3× to map typical instrumental
+            # (~0.30) toward stretched≈0.30 and loud vocals (~0.55+)
+            # to a fully saturated 1.0. Without this stretch the response
+            # was too flat across the realistic operating range.
             #
             # Sign of WARP_FADE_VOCAL picks WHICH end of the vocal axis
             # kills trails:
             #   +1.0  vocals kill trails  (silence = base, vocals = no trails)
             #    0.0  no modulation       (constant base trails)
             #   -1.0  silence kills trails (silence = no trails, vocals = base)
-            # Either extreme can drive trails fully to zero — when the
-            # multiplier hits ~0 we skip the warp blend entirely so dead
-            # pixels just show the background.
-            stretched_vocal = max(0.0, min(1.0, (audio_render.vocal_energy - 0.30) * 3.0))
+            # Either extreme drives the multiplier to ≈0; we bypass the
+            # warp blend entirely below 0.01 so trails are genuinely off.
+            stretched_vocal = max(0.0, min(1.0, (audio_render.vocal_energy - 0.20) * 3.0))
             v = args.warp_fade_vocal
             if v >= 0:
                 mult = 1.0 - v * stretched_vocal
@@ -392,9 +402,19 @@ def main():
             mult = max(0.0, min(4.0, mult))
             if mult < 0.01:
                 warp_dim = 0.0  # trails off — warped will collapse to bg
+                fade_ticks_dyn = 0
             else:
                 fade_ticks_dyn = max(1, int(args.warp_fade_ticks * mult))
                 warp_dim = 0.01 ** (1.0 / fade_ticks_dyn)
+
+            if args.debug and frame_count % 20 == 0:
+                print(
+                    f"[audio] centroid={audio_render.centroid:.3f} "
+                    f"vocal_energy={audio_render.vocal_energy:.3f} "
+                    f"stretched_vocal={stretched_vocal:.3f} "
+                    f"mult={mult:.3f} fade_ticks_dyn={fade_ticks_dyn}",
+                    flush=True,
+                )
 
             # Warp echo: zoom the previous frame outward from the (dynamic)
             # focal with per-frame stochastic rounding (sub-pixel dither),
