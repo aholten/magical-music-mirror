@@ -12,8 +12,11 @@ def compose(audio_layer: np.ndarray, ruleset_output: np.ndarray, mode: str) -> n
     if mode == "gated":
         return audio_layer * ruleset_output[..., None].astype(np.uint8)
     if mode == "underlay":
-        underlay = np.where(ruleset_output[..., None], np.uint8(40), np.uint8(0))
-        underlay = np.broadcast_to(underlay, audio_layer.shape).astype(np.uint8)
+        # Dim teal-green for alive Conway cells so they're visibly distinct
+        # from the magenta/blue audio bars without competing for attention.
+        underlay = np.zeros_like(audio_layer)
+        underlay[..., 1] = (ruleset_output * 110).astype(np.uint8)  # G
+        underlay[..., 2] = (ruleset_output * 70).astype(np.uint8)   # B
         audio_present = audio_layer.any(axis=-1, keepdims=True)
         return np.where(audio_present, audio_layer, underlay)
     raise ValueError(f"unknown compose mode: {mode}")
