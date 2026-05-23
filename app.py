@@ -41,6 +41,18 @@ def _build_fade_table(alive_rgb: tuple, bg_rgb: tuple, ticks: int) -> np.ndarray
     return ((1 - t) * alive + t * bg).clip(0, 255).astype(np.uint8)
 
 
+def _build_warp_map(h: int, w: int, zoom: float, focal_y: int, focal_x: int):
+    """Precompute integer source-index arrays for a per-frame zoom-outward
+    warp. Sampling prev[warp_ys, warp_xs] gives a copy scaled by `zoom`
+    around the focal point: content recedes away from focal each tick."""
+    ys, xs = np.indices((h, w))
+    src_ys = (focal_y + (ys - focal_y) / zoom).astype(np.int32)
+    src_xs = (focal_x + (xs - focal_x) / zoom).astype(np.int32)
+    np.clip(src_ys, 0, h - 1, out=src_ys)
+    np.clip(src_xs, 0, w - 1, out=src_xs)
+    return src_ys, src_xs
+
+
 # --- Layouts -----------------------------------------------------------------
 #
 # A layout splits the pipeline in two:
@@ -99,6 +111,22 @@ def main():
         "Smaller = quicker fade (snappy/strobey). Larger = slower fade (smoother trails). "
         "At 60 fps: 60=1s, 120=2s, 300=5s, 600=10s.",
     )
+    ap.add_argument(
+        "--warp-zoom",
+        type=float,
+        default=1.04,
+        help="Per-frame zoom factor for the warp-drive echo. 1.0 = no motion, "
+        "1.02 = subtle drift outward, 1.04 = noticeable hyperspace pull, "
+        "1.08 = aggressive (echoes fly off-screen fast).",
+    )
+    ap.add_argument(
+        "--warp-dim",
+        type=float,
+        default=0.93,
+        help="Per-frame brightness decay (toward BG_COLOR) applied to the warp "
+        "echo. 1.0 = echoes never decay (trails fill the screen). "
+        "0.93 = ~1s visible trail at 60fps. 0.85 = short, snappy trails.",
+    )
     args = ap.parse_args()
 
     fade_table = _build_fade_table(ALIVE_COLOR, BG_COLOR, args.fade_ticks)
@@ -136,9 +164,16 @@ def main():
     x_off = (WINDOW_W - scaled_w) // 2
     y_off = (WINDOW_H - scaled_h) // 2
 
-    # Per-pixel age counter for hue cycling. Reset to 0 on any frame where
-    # the pixel is black (dead Conway cell and no audio); otherwise +1.
+    # Per-pixel age counter for the fade table. Reset to 0 on death.
     age = np.zeros((out_h, out_w), dtype=np.int32)
+
+    # Warp echo state. prev_display gets zoomed and dimmed each frame to
+    # become the next frame's background-where-pixels-are-dead, producing
+    # the warp-drive trails. Start at solid background.
+    warp_ys, warp_xs = _build_warp_map(out_h, out_w, args.warp_zoom, out_h // 2, out_w // 2)
+    bg_float = np.array(BG_COLOR, dtype=np.float32)
+    prev_display = np.empty((out_h, out_w, 3), dtype=np.uint8)
+    prev_display[:] = bg_pixel
 
     try:
         running = True
@@ -153,12 +188,21 @@ def main():
             ruleset_out = ruleset.step(prev_frame=None, audio_layer=audio_layer)
             composed = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
 
-            # Age the alive pixels and look up their faded color. Dead
-            # pixels show the night-sky background directly.
+            # Warp echo: zoom the previous frame outward from the center,
+            # then decay it toward the background. This is what fills the
+            # "dead pixel" slots — the result reads as content receding
+            # into the distance.
+            warped = prev_display[warp_ys, warp_xs].astype(np.float32)
+            warped = warped * args.warp_dim + bg_float * (1.0 - args.warp_dim)
+            warped = warped.clip(0, 255).astype(np.uint8)
+
+            # Age the alive pixels and look up their faded color. New births
+            # pop bright; dead pixels show the warped echo of recent frames.
             alive = composed.any(axis=-1)
             age = np.where(alive, np.minimum(age + 1, args.fade_ticks), 0)
             display = fade_table[age]
-            display = np.where(alive[..., None], display, bg_pixel)
+            display = np.where(alive[..., None], display, warped)
+            prev_display = display
 
             pygame.surfarray.blit_array(src_surface, np.transpose(display, (1, 0, 2)))
             scaled = pygame.transform.scale(src_surface, (scaled_w, scaled_h))
