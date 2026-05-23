@@ -278,12 +278,12 @@ def main():
         default=0.75,
         help="How sustained vocal-range content (200–4000 Hz) modulates "
         "warp trail length. The sign picks which end of the vocal axis "
-        "kills the trails: "
-        "+1.0 = vocals kill trails (silence keeps base trails), "
+        "carries the warp: "
+        "+1.0 = vocals CAUSE warp (silence = no trails, vocals = full), "
         " 0.0 = no modulation (constant base trails), "
-        "-1.0 = silence kills trails (vocals revive them). "
-        "Values between scale the effect proportionally. At either "
-        "extreme, the trail-length multiplier can reach 0 (fully off).",
+        "-1.0 = vocals KILL warp (silence = full trails, vocals = none). "
+        "Values between scale the effect. Either extreme can fully zero "
+        "the trails at the appropriate end.",
     )
     args = ap.parse_args()
 
@@ -381,24 +381,27 @@ def main():
 
             # Dynamic warp fade: vocal-range level modulates trail length.
             # vocal_energy is the smoothed absolute mid-band level (0..~0.7);
-            # stretch around 0.20 by 3× to map typical instrumental
-            # (~0.30) toward stretched≈0.30 and loud vocals (~0.55+)
-            # to a fully saturated 1.0. Without this stretch the response
-            # was too flat across the realistic operating range.
+            # stretch around 0.20 by 3× to map instrumental (~0.30) toward
+            # stretched≈0.30 and loud vocals (~0.55+) to a saturated 1.0.
             #
             # Sign of WARP_FADE_VOCAL picks WHICH end of the vocal axis
-            # kills trails:
-            #   +1.0  vocals kill trails  (silence = base, vocals = no trails)
-            #    0.0  no modulation       (constant base trails)
-            #   -1.0  silence kills trails (silence = no trails, vocals = base)
-            # Either extreme drives the multiplier to ≈0; we bypass the
-            # warp blend entirely below 0.01 so trails are genuinely off.
+            # carries the warp trails:
+            #   +1.0  vocals CAUSE warp  (silence = no trails, vocals = full)
+            #    0.0  no modulation      (constant base trails)
+            #   -1.0  vocals KILL warp   (silence = full trails, vocals = none)
+            # Either extreme drives the multiplier to ≈0 at the "off" end;
+            # below 0.01 we bypass the warp blend entirely so trails are
+            # genuinely off, not just very faint.
             stretched_vocal = max(0.0, min(1.0, (audio_render.vocal_energy - 0.20) * 3.0))
             v = args.warp_fade_vocal
             if v >= 0:
-                mult = 1.0 - v * stretched_vocal
+                # Positive: vocals turn the warp ON. Silence sits at (1-v),
+                # peak vocals sit at 1.0 (base trails).
+                mult = (1.0 - v) + v * stretched_vocal
             else:
-                mult = 1.0 + v * (1.0 - stretched_vocal)
+                # Negative: vocals turn the warp OFF. Silence sits at 1.0,
+                # peak vocals sit at (1+v).
+                mult = 1.0 + v * stretched_vocal
             mult = max(0.0, min(4.0, mult))
             if mult < 0.01:
                 warp_dim = 0.0  # trails off — warped will collapse to bg
