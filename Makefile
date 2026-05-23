@@ -2,22 +2,25 @@ VENV    := .venv
 PY      := $(VENV)/bin/python
 PIP     := $(VENV)/bin/pip
 
-DEVICE  ?= BlackHole 2ch
-RULESET ?= conway11
-LAYOUT  ?= dual-mirror
+DEVICE     ?= BlackHole 2ch
+RULESET    ?= conway11
+LAYOUT     ?= dual-mirror
+FADE_TICKS ?= 120
 
 .PHONY: help run devices install clean
 
 help:
 	@echo "Targets:"
 	@echo "  make install     create .venv and install deps"
-	@echo "  make run         run the visualizer (DEVICE='$(DEVICE)' RULESET=$(RULESET) LAYOUT=$(LAYOUT))"
+	@echo "  make run         run the visualizer (DEVICE='$(DEVICE)' RULESET=$(RULESET) LAYOUT=$(LAYOUT) FADE_TICKS=$(FADE_TICKS))"
 	@echo "  make devices     list audio input devices"
 	@echo "  make clean       remove .venv"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run RULESET=conway10"
 	@echo "  make run LAYOUT=butterfly"
+	@echo "  make run FADE_TICKS=60   # quick fade — 1s at 60fps"
+	@echo "  make run FADE_TICKS=600  # slow trails — 10s at 60fps"
 	@echo "  make run DEVICE='Built-in Input'"
 
 $(VENV)/bin/activate: requirements.txt
@@ -29,7 +32,7 @@ $(VENV)/bin/activate: requirements.txt
 install: $(VENV)/bin/activate
 
 run: install
-	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET) --layout $(LAYOUT)
+	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET) --layout $(LAYOUT) --fade-ticks $(FADE_TICKS)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"

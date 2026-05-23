@@ -19,41 +19,26 @@ from themes.ruleset.conway import VARIANTS
 WINDOW_W, WINDOW_H = 1280, 720
 TARGET_FPS = 60
 
-# Hue-cycling: a pixel that stays alive (non-black) accumulates one tick
-# of age per frame, which advances its hue by `HUE_STEP_DEG` degrees.
-# Dead pixels reset to age 0 and re-enter at the base color. Tunes how
-# fast the color drift feels: 1.0° → full rotation in 360 frames (~6 s
-# at 60 fps), 0.5° → ~12 s, 2.0° → ~3 s.
-HUE_STEP_DEG = 1.0
-HUE_TABLE_SIZE = 360
-BASE_COLOR_RGB = np.array([0, 110, 70], dtype=np.float32)
+# Night-sky background and warm pale-yellow alive color. Alive pixels start
+# at ALIVE_COLOR (age 0) and linearly blend toward BG_COLOR as they age,
+# reaching the background after --fade-ticks frames — so persistent regions
+# slowly "fade into the night". On death, age resets to 0 and the pixel
+# disappears into the background until something brings it back to life.
+BG_COLOR = (10, 14, 36)
+ALIVE_COLOR = (250, 240, 190)
 
 
-def _build_hue_table() -> np.ndarray:
-    """Precompute the hue-rotated RGB triple for every integer-degree offset.
+def _build_fade_table(alive_rgb: tuple, bg_rgb: tuple, ticks: int) -> np.ndarray:
+    """Linear-blend table: table[i] is the color at age i (clamped to ticks).
 
-    Uses the standard luminance-preserving RGB hue-rotation matrix; output is
-    a (HUE_TABLE_SIZE, 3) uint8 array indexed by `age % HUE_TABLE_SIZE`.
+    Index 0 = full alive color; index `ticks` = full background.
     """
-    table = np.zeros((HUE_TABLE_SIZE, 3), dtype=np.uint8)
-    sqrt3 = np.sqrt(3)
-    for i in range(HUE_TABLE_SIZE):
-        theta = np.deg2rad(i * HUE_STEP_DEG)
-        c, s = np.cos(theta), np.sin(theta)
-        m_diag = c + (1 - c) / 3
-        m_low = (1 - c) / 3 - s / sqrt3
-        m_high = (1 - c) / 3 + s / sqrt3
-        matrix = np.array([
-            [m_diag, m_low, m_high],
-            [m_high, m_diag, m_low],
-            [m_low, m_high, m_diag],
-        ])
-        rotated = matrix @ BASE_COLOR_RGB
-        table[i] = np.clip(rotated, 0, 255).astype(np.uint8)
-    return table
-
-
-HUE_TABLE = _build_hue_table()
+    ticks = max(1, ticks)
+    ages = np.arange(ticks + 1, dtype=np.float32).reshape(-1, 1)
+    t = ages / ticks  # 0 → 1 across the table
+    alive = np.array(alive_rgb, dtype=np.float32).reshape(1, 3)
+    bg = np.array(bg_rgb, dtype=np.float32).reshape(1, 3)
+    return ((1 - t) * alive + t * bg).clip(0, 255).astype(np.uint8)
 
 
 # --- Layouts -----------------------------------------------------------------
@@ -106,7 +91,18 @@ def main():
     ap.add_argument("--ruleset", default="conway11", choices=VARIANTS.keys())
     ap.add_argument("--layout", default="dual-mirror", choices=LAYOUTS.keys())
     ap.add_argument("--samplerate", type=int, default=44100)
+    ap.add_argument(
+        "--fade-ticks",
+        type=int,
+        default=120,
+        help="Frames an alive pixel takes to fade from ALIVE_COLOR to BG_COLOR. "
+        "Smaller = quicker fade (snappy/strobey). Larger = slower fade (smoother trails). "
+        "At 60 fps: 60=1s, 120=2s, 300=5s, 600=10s.",
+    )
     args = ap.parse_args()
+
+    fade_table = _build_fade_table(ALIVE_COLOR, BG_COLOR, args.fade_ticks)
+    bg_pixel = np.array(BG_COLOR, dtype=np.uint8)
 
     layout = LAYOUTS[args.layout]
     audio_h, audio_w = layout["audio_shape"]
@@ -157,17 +153,16 @@ def main():
             ruleset_out = ruleset.step(prev_frame=None, audio_layer=audio_layer)
             composed = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
 
-            # Age cycling: increment age where pixel is alive (any non-zero
-            # channel) and reset to 0 where dead. Then recolor every alive
-            # pixel via the hue table indexed by its current age.
+            # Age the alive pixels and look up their faded color. Dead
+            # pixels show the night-sky background directly.
             alive = composed.any(axis=-1)
-            age = np.where(alive, age + 1, 0)
-            display = HUE_TABLE[age % HUE_TABLE_SIZE]
-            display = np.where(alive[..., None], display, np.uint8(0))
+            age = np.where(alive, np.minimum(age + 1, args.fade_ticks), 0)
+            display = fade_table[age]
+            display = np.where(alive[..., None], display, bg_pixel)
 
             pygame.surfarray.blit_array(src_surface, np.transpose(display, (1, 0, 2)))
             scaled = pygame.transform.scale(src_surface, (scaled_w, scaled_h))
-            screen.fill((0, 0, 0))
+            screen.fill(BG_COLOR)
             screen.blit(scaled, (x_off, y_off))
             pygame.display.flip()
             clock.tick(TARGET_FPS)
