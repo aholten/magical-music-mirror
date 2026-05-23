@@ -19,27 +19,69 @@ from themes.ruleset.conway import VARIANTS
 WINDOW_W, WINDOW_H = 1280, 720
 TARGET_FPS = 60
 
-# Night-sky background and warm pale-yellow alive color. Alive pixels start
-# at ALIVE_COLOR (age 0) and progress through a sunset palette as they age,
-# arriving at BG_COLOR after --fade-ticks frames — so persistent regions
-# drift from the pale sun through warm gold, orange, magenta, deep purple,
-# and into the night. On death, age resets to 0 and the pixel disappears
-# into the background until something brings it back to life.
-BG_COLOR = (10, 14, 36)
-ALIVE_COLOR = (250, 240, 190)
-
-# Piecewise-linear sunset palette. Evenly spaced across the alive lifetime.
-# Tweak the middle stops to taste; first must be ALIVE_COLOR, last BG_COLOR.
-SUNSET_STOPS = [
-    ALIVE_COLOR,        # 0%   — pale yellow sun
-    (255, 215, 130),    # ~14% — warm gold
-    (255, 155, 70),     # ~29% — orange
-    (235, 95, 70),      # ~43% — coral / red-orange
-    (190, 55, 100),     # ~57% — magenta
-    (110, 45, 120),     # ~71% — deep purple
-    (40, 30, 80),       # ~86% — twilight blue-violet
-    BG_COLOR,           # 100% — night
-]
+# Each palette is a list of RGB stops walked piecewise-linearly across the
+# alive lifetime: stops[0] is the freshly-born "alive" color, stops[-1] is
+# the background. Anything in between is a sweep through the palette.
+#
+# To add your own: pick 4–8 colors that read as a single mood and end on a
+# dark "background" color. They get evenly distributed across --fade-ticks
+# and the warp echo + screen fill both pick up the last stop automatically.
+PALETTES = {
+    "sunset": [
+        (250, 240, 190),   # pale sun
+        (255, 215, 130),   # warm gold
+        (255, 155, 70),    # orange
+        (235, 95, 70),     # coral
+        (190, 55, 100),    # magenta
+        (110, 45, 120),    # deep purple
+        (40, 30, 80),      # twilight
+        (10, 14, 36),      # night
+    ],
+    "ocean": [
+        (220, 250, 255),   # foam
+        (130, 220, 235),   # sea-green
+        (60, 180, 220),    # bright blue
+        (30, 110, 180),    # ocean blue
+        (20, 60, 130),     # deep blue
+        (10, 25, 60),      # abyss
+        (5, 10, 25),       # black water
+    ],
+    "fire": [
+        (255, 250, 210),   # white-hot
+        (255, 220, 100),   # yellow flame
+        (255, 140, 30),    # orange flame
+        (220, 60, 30),     # red flame
+        (140, 20, 20),     # ember
+        (50, 10, 10),      # coal
+        (10, 4, 4),        # ash
+    ],
+    "neon": [
+        (255, 255, 255),   # white
+        (255, 100, 220),   # hot pink
+        (180, 60, 230),    # violet
+        (90, 50, 220),     # electric blue
+        (40, 100, 200),    # cobalt
+        (20, 40, 100),     # deep
+        (8, 10, 30),       # midnight
+    ],
+    "forest": [
+        (240, 255, 220),   # mist
+        (180, 230, 140),   # spring green
+        (100, 180, 80),    # leaf
+        (50, 130, 60),     # forest
+        (30, 80, 50),      # moss
+        (15, 40, 25),      # shadow
+        (5, 15, 10),       # undergrowth
+    ],
+    "monochrome": [
+        (255, 255, 255),   # white
+        (190, 190, 195),   # light gray
+        (130, 130, 140),   # gray
+        (70, 70, 80),      # dark gray
+        (25, 25, 35),      # near black
+        (5, 5, 10),        # black
+    ],
+}
 
 
 def _build_fade_table(stops: list, ticks: int) -> np.ndarray:
@@ -129,6 +171,7 @@ def main():
     ap.add_argument("--device", help="Input device name or index (e.g. 'BlackHole 2ch')")
     ap.add_argument("--ruleset", default="conway11", choices=VARIANTS.keys())
     ap.add_argument("--layout", default="dual-mirror", choices=LAYOUTS.keys())
+    ap.add_argument("--palette", default="sunset", choices=PALETTES.keys())
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument(
         "--fade-ticks",
@@ -165,8 +208,10 @@ def main():
     )
     args = ap.parse_args()
 
-    fade_table = _build_fade_table(SUNSET_STOPS, args.fade_ticks)
-    bg_pixel = np.array(BG_COLOR, dtype=np.uint8)
+    palette = PALETTES[args.palette]
+    bg_color = palette[-1]  # last stop = background
+    fade_table = _build_fade_table(palette, args.fade_ticks)
+    bg_pixel = np.array(bg_color, dtype=np.uint8)
 
     # Convert warp_fade_ticks → per-frame brightness multiplier such that
     # multiplier ** ticks ≈ 0.01 (the echo reaches 1% intensity at `ticks`
@@ -196,7 +241,9 @@ def main():
     print("[startup] opening window", flush=True)
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
     print("[startup] window open, entering main loop", flush=True)
-    pygame.display.set_caption(f"MagicalMusicMirror — {args.layout} / {args.ruleset}")
+    pygame.display.set_caption(
+        f"MagicalMusicMirror — {args.layout} / {args.ruleset} / {args.palette}"
+    )
     clock = pygame.time.Clock()
     src_surface = pygame.Surface((out_w, out_h))
 
@@ -215,7 +262,7 @@ def main():
         out_h, out_w, args.warp_zoom, (out_h - 1) / 2.0, (out_w - 1) / 2.0
     )
     warp_rng = np.random.default_rng()
-    bg_float = np.array(BG_COLOR, dtype=np.float32)
+    bg_float = np.array(bg_color, dtype=np.float32)
     prev_display = np.empty((out_h, out_w, 3), dtype=np.uint8)
     prev_display[:] = bg_pixel
 
@@ -256,7 +303,7 @@ def main():
 
             pygame.surfarray.blit_array(src_surface, np.transpose(display, (1, 0, 2)))
             scaled = pygame.transform.scale(src_surface, (scaled_w, scaled_h))
-            screen.fill(BG_COLOR)
+            screen.fill(bg_color)
             screen.blit(scaled, (x_off, y_off))
             pygame.display.flip()
             clock.tick(TARGET_FPS)

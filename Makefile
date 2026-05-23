@@ -5,6 +5,7 @@ PIP     := $(VENV)/bin/pip
 DEVICE     ?= BlackHole 2ch
 RULESET    ?= conway11
 LAYOUT     ?= dual-mirror
+PALETTE    ?= sunset
 FADE_TICKS ?= 120
 WARP_ZOOM       ?= 1.04
 WARP_FADE_TICKS ?= 63
@@ -22,6 +23,7 @@ help:
 	@echo "Examples:"
 	@echo "  make run RULESET=conway10"
 	@echo "  make run LAYOUT=butterfly"
+	@echo "  make run PALETTE=ocean     # also: fire, neon, forest, monochrome"
 	@echo "  make run FADE_TICKS=60   # quick fade — 1s at 60fps"
 	@echo "  make run FADE_TICKS=600  # slow trails — 10s at 60fps"
 	@echo "  make run WARP_ZOOM=1.02         # subtle warp drift"
@@ -43,8 +45,9 @@ install: $(VENV)/bin/activate
 
 run: install
 	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET) --layout $(LAYOUT) \
-		--fade-ticks $(FADE_TICKS) --warp-zoom $(WARP_ZOOM) \
-		--warp-fade-ticks $(WARP_FADE_TICKS) --warp-dither $(WARP_DITHER)
+		--palette $(PALETTE) --fade-ticks $(FADE_TICKS) \
+		--warp-zoom $(WARP_ZOOM) --warp-fade-ticks $(WARP_FADE_TICKS) \
+		--warp-dither $(WARP_DITHER)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"
