@@ -17,7 +17,6 @@ class BarMeter:
         attack: float = 0.0,
         release: float = 0.78,
         bars: int = 48,
-        gap: int = 1,
         fft_size: int = 8192,
     ):
         # Asymmetric smoothing: attack governs how much the previous height
@@ -29,7 +28,6 @@ class BarMeter:
         self.attack = attack
         self.release = release
         self.bars = bars
-        self.gap = gap
         self.fft_size = fft_size
         self._prev_heights: np.ndarray | None = None
 
@@ -71,17 +69,18 @@ class BarMeter:
             heights = np.where(going_up, up, down)
         self._prev_heights = heights
 
-        # Render bars-with-gaps across the grid width: each bar gets a uniform
-        # column slot, leaving `gap` empty grid columns between slots. Color
-        # matches the Conway alive-cell color in the compositor so bars look
-        # like stacks of the same "stuff" Conway is made of.
+        # Tile the full grid width with `bars` contiguous columns. Slot edges
+        # are computed as `(i * w / bars)` floored — this absorbs the
+        # remainder when w isn't a multiple of bars (e.g. 48 bars over 160
+        # cols gives a mix of 3- and 4-pixel-wide bars) and leaves no blank
+        # space at the right edge. Color is a marker only; app.py overrides
+        # it via the alive-mask + fade table.
         frame = np.zeros((h, w, 3), dtype=np.uint8)
-        slot = max(1, w // self.bars)
-        bar_w = max(1, slot - self.gap)
+        slot_starts = (np.arange(self.bars + 1) * w / self.bars).astype(int)
         rows_lit = (heights * h).astype(int)
         for i in range(self.bars):
-            x0 = i * slot
-            x1 = min(x0 + bar_w, w)
+            x0 = slot_starts[i]
+            x1 = slot_starts[i + 1]
             top = h - rows_lit[i]
             frame[top:h, x0:x1] = (0, 110, 70)
         return frame
