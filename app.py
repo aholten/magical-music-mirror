@@ -327,8 +327,13 @@ def main():
 
             # Age the alive pixels and look up their faded color. New births
             # pop bright; dead pixels show the warped echo of recent frames.
+            # The leading edge of each audio bar (R==1 sentinel from BarMeter)
+            # is force-reset to age 0 every frame so the tip always reads as
+            # the initial palette color, while the body ages normally.
             alive = composed.any(axis=-1)
             age = np.where(alive, np.minimum(age + 1, args.fade_ticks), 0)
+            bar_edge = composed[..., 0] == 1
+            age = np.where(bar_edge, 0, age)
             display = fade_table[age]
             display = np.where(alive[..., None], display, warped)
             prev_display = display

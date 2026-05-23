@@ -73,8 +73,14 @@ class BarMeter:
         # are computed as `(i * w / bars)` floored — this absorbs the
         # remainder when w isn't a multiple of bars (e.g. 48 bars over 160
         # cols gives a mix of 3- and 4-pixel-wide bars) and leaves no blank
-        # space at the right edge. Color is a marker only; app.py overrides
-        # it via the alive-mask + fade table.
+        # space at the right edge.
+        #
+        # Pixel values here are SENTINELS, not display colors — app.py
+        # remaps everything via the fade-table lookup. R=1 marks the top
+        # row of each bar (forced to age 0 by app.py so the leading edge
+        # always shows the initial palette color), R=2 marks the body.
+        # Conway underlay uses R=0 in compositor.py, so the channels stay
+        # disjoint after compose.
         frame = np.zeros((h, w, 3), dtype=np.uint8)
         slot_starts = (np.arange(self.bars + 1) * w / self.bars).astype(int)
         rows_lit = (heights * h).astype(int)
@@ -82,5 +88,8 @@ class BarMeter:
             x0 = slot_starts[i]
             x1 = slot_starts[i + 1]
             top = h - rows_lit[i]
-            frame[top:h, x0:x1] = (0, 110, 70)
+            if rows_lit[i] <= 0:
+                continue
+            frame[top:h, x0:x1] = (2, 0, 0)
+            frame[top, x0:x1] = (1, 0, 0)
         return frame
