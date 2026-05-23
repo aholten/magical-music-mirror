@@ -30,6 +30,11 @@ class BarMeter:
         self.bars = bars
         self.fft_size = fft_size
         self._prev_heights: np.ndarray | None = None
+        # Smoothed spectral centroid in [0, 1]: 0 = all energy in bass, 1 =
+        # all energy in treble. Updated each render(); 0.5 when silent so
+        # consumers (e.g. dynamic warp focal) see a neutral neutral default.
+        self.centroid: float = 0.5
+        self._centroid_smoothing = 0.88
 
     def render(self, audio_frame: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
         h, w = shape
@@ -68,6 +73,18 @@ class BarMeter:
             down = self.release * self._prev_heights + (1 - self.release) * heights
             heights = np.where(going_up, up, down)
         self._prev_heights = heights
+
+        # Spectral centroid in normalized bar-index space [0, 1]. Hold the
+        # previous value when nothing's playing rather than snapping to 0.5,
+        # so quiet moments don't lurch the warp focal back to center.
+        total = float(heights.sum())
+        if total > 1e-6 and self.bars > 1:
+            indices = np.arange(self.bars, dtype=np.float32)
+            raw_centroid = float((heights * indices).sum() / total / (self.bars - 1))
+            self.centroid = (
+                self._centroid_smoothing * self.centroid
+                + (1 - self._centroid_smoothing) * raw_centroid
+            )
 
         # Tile the full grid width with `bars` contiguous columns. Slot edges
         # are computed as `(i * w / bars)` floored — this absorbs the

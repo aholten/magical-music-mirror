@@ -237,6 +237,15 @@ def main():
         "1.0 = full ±0.5px stochastic rounding (smooth motion + film grain). "
         "2.0+ = pronounced grain texture.",
     )
+    ap.add_argument(
+        "--warp-focus-range",
+        type=float,
+        default=0.3,
+        help="How far the warp focal point drifts vertically from the grid "
+        "center, as a fraction of grid height, driven by the spectral "
+        "centroid (bass = down, treble = up). 0.0 = static center, "
+        "0.3 = ±15%% of height, 0.5 = up to ±25%% (focal can reach the edges).",
+    )
     args = ap.parse_args()
 
     palette = PALETTES[args.palette]
@@ -290,9 +299,17 @@ def main():
     # Warp echo state. prev_display gets zoomed and dimmed each frame to
     # become the next frame's background-where-pixels-are-dead, producing
     # the warp-drive trails. Start at solid background.
-    warp_y_float, warp_x_float = _build_warp_map_float(
-        out_h, out_w, args.warp_zoom, (out_h - 1) / 2.0, (out_w - 1) / 2.0
-    )
+    # Warp focal: x stays fixed at the geometric center; y drifts vertically
+    # each frame based on the spectral centroid (bass→down, treble→up).
+    # Decompose `src_y = focal_y + (ys - focal_y) / zoom` into a precomputable
+    # index part `ys/zoom` plus a per-frame scalar `focal_y * (1 - 1/zoom)`,
+    # so the loop just does a scalar-add — no array re-creation per frame.
+    ys_arr, xs_arr = np.indices((out_h, out_w)).astype(np.float32)
+    focal_x_static = (out_w - 1) / 2.0
+    center_y = (out_h - 1) / 2.0
+    warp_x_float = focal_x_static + (xs_arr - focal_x_static) / args.warp_zoom
+    warp_y_index_part = ys_arr / args.warp_zoom
+    warp_y_focal_factor = 1.0 - 1.0 / args.warp_zoom
     warp_rng = np.random.default_rng()
     bg_float = np.array(bg_color, dtype=np.float32)
     prev_display = np.empty((out_h, out_w, 3), dtype=np.uint8)
@@ -311,11 +328,17 @@ def main():
             ruleset_out = ruleset.step(prev_frame=None, audio_layer=audio_layer)
             composed = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
 
-            # Warp echo: zoom the previous frame outward from the center
-            # with per-frame stochastic rounding (sub-pixel dither) so the
-            # near-focal region doesn't freeze into stair-step bands.
-            # Then decay toward the background. The result fills every
-            # "dead pixel" slot and reads as content receding outward.
+            # Dynamic warp focal: shift y based on the spectral centroid so
+            # bass-heavy content emanates from the lower half and treble
+            # content emanates from the upper half. centroid==0.5 keeps the
+            # focal at the geometric center.
+            focal_y = center_y + (0.5 - audio_render.centroid) * out_h * args.warp_focus_range
+            warp_y_float = focal_y * warp_y_focal_factor + warp_y_index_part
+
+            # Warp echo: zoom the previous frame outward from the (dynamic)
+            # focal with per-frame stochastic rounding (sub-pixel dither),
+            # then decay toward the background. Result fills dead-pixel
+            # slots and reads as content receding outward.
             j = args.warp_dither * 0.5
             sy = np.round(warp_y_float + warp_rng.uniform(-j, j, warp_y_float.shape)).astype(np.int32)
             sx = np.round(warp_x_float + warp_rng.uniform(-j, j, warp_x_float.shape)).astype(np.int32)
