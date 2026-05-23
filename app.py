@@ -123,8 +123,11 @@ def main():
     ruleset = VARIANTS[args.ruleset]((out_h, out_w))
     print(f"[startup] ruleset {args.ruleset} initialized at {(out_h, out_w)}", flush=True)
 
-    print("[startup] pygame.init()", flush=True)
-    pygame.init()
+    # Only init pygame.display — pygame.init() would also bring up
+    # pygame.mixer, which races sounddevice/PortAudio for the audio
+    # device on macOS and deadlocks. We don't use pygame audio at all.
+    print("[startup] pygame.display.init()", flush=True)
+    pygame.display.init()
     print("[startup] opening window", flush=True)
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
     print("[startup] window open, entering main loop", flush=True)
