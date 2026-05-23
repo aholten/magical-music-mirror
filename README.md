@@ -13,20 +13,18 @@ The MVP ships one of each: a `BarMeter` AudioRender (FFT, low→high left→righ
 
 1. **Install [BlackHole 2ch](https://existential.audio/blackhole/)** — virtual audio loopback driver. Free, brew: `brew install --cask blackhole-2ch`.
 2. **Create a Multi-Output Device** in Audio MIDI Setup that includes both your speakers/headphones *and* BlackHole. Set system output to the Multi-Output Device. (You'll hear audio normally, and BlackHole gets a copy.)
-3. **Clone and install:**
+3. **Clone and run:**
    ```bash
    git clone https://github.com/aholten/magical-music-mirror.git
    cd magical-music-mirror
-   python3 -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
+   make run                       # creates .venv, installs deps, runs with defaults
    ```
-4. **List audio input devices** (find BlackHole):
+   Other targets:
    ```bash
-   python3 -c "import sounddevice as sd; print(sd.query_devices())"
-   ```
-5. **Run:**
-   ```bash
-   python3 app.py --device "BlackHole 2ch"
+   make devices                   # list audio devices (find BlackHole's exact name)
+   make run RULESET=conway10      # try a different Conway gene variant
+   make run DEVICE="Built-in Input"
+   make clean                     # nuke .venv
    ```
 
 ## Theme concepts
