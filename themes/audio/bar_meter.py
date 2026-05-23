@@ -15,15 +15,15 @@ class BarMeter:
         self,
         samplerate: int = 44100,
         attack: float = 0.0,
-        release: float = 0.78,
+        release: float = 0.65,
         bars: int = 48,
         fft_size: int = 8192,
     ):
         # Asymmetric smoothing: attack governs how much the previous height
         # influences a NEW MAX (going up); release governs the descent. 0.0
-        # = instant snap up to the new value, 0.78 = drop ~22% of the gap
-        # per frame on the way down (≈140 ms half-life @ 60 fps). This makes
-        # transients punch through instantly while keeping decay smooth.
+        # = instant snap up on transients. 0.65 = drop 35% of the gap per
+        # frame on the way down (~27 ms half-life @60fps). This makes peaks
+        # punch through immediately while the decay still reads smooth.
         self.samplerate = samplerate
         self.attack = attack
         self.release = release

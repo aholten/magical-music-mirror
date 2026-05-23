@@ -60,23 +60,24 @@ def _build_fade_table(stops: list, ticks: int) -> np.ndarray:
     return table.clip(0, 255).astype(np.uint8)
 
 
-def _build_warp_map(h: int, w: int, zoom: float, focal_y: float, focal_x: float):
-    """Precompute integer source-index arrays for a per-frame zoom-outward
-    warp. Sampling prev[warp_ys, warp_xs] gives a copy scaled by `zoom`
-    around the focal point: content recedes away from focal each tick.
+def _build_warp_map_float(h: int, w: int, zoom: float, focal_y: float, focal_x: float):
+    """Precompute the FLOAT source coordinates for the warp.
+
+    Sampling at integer source coords is the standard nearest-neighbor warp,
+    which produces hard "stair-step" bands when the per-pixel displacement
+    is sub-pixel (everything within ~1/(zoom-1) of focal can't move at all).
+    We keep the unrounded coords so the main loop can add temporal dither
+    each frame and average to the true sub-pixel motion.
 
     focal_{y,x} are floats so the focal can sit between pixels — passing
     the true geometric center ((h-1)/2, (w-1)/2) on an even-sized grid
     produces a 2×2 stationary block at the center, symmetric across both
-    axes. We use np.round (not truncation) so sub-pixel displacements
-    near the focal round symmetrically rather than always toward zero.
+    axes.
     """
-    ys, xs = np.indices((h, w))
-    src_ys = np.round(focal_y + (ys - focal_y) / zoom).astype(np.int32)
-    src_xs = np.round(focal_x + (xs - focal_x) / zoom).astype(np.int32)
-    np.clip(src_ys, 0, h - 1, out=src_ys)
-    np.clip(src_xs, 0, w - 1, out=src_xs)
-    return src_ys, src_xs
+    ys, xs = np.indices((h, w)).astype(np.float32)
+    src_y = focal_y + (ys - focal_y) / zoom
+    src_x = focal_x + (xs - focal_x) / zoom
+    return src_y, src_x
 
 
 # --- Layouts -----------------------------------------------------------------
@@ -153,6 +154,15 @@ def main():
         "echo. 1.0 = echoes never decay (trails fill the screen). "
         "0.93 = ~1s visible trail at 60fps. 0.85 = short, snappy trails.",
     )
+    ap.add_argument(
+        "--warp-dither",
+        type=float,
+        default=1.0,
+        help="Half-pixel jitter applied to warp source coords each frame. "
+        "0.0 = fixed nearest-neighbor sampling (hard stair-step bands). "
+        "1.0 = full ±0.5px stochastic rounding (smooth motion + film grain). "
+        "2.0+ = pronounced grain texture.",
+    )
     args = ap.parse_args()
 
     fade_table = _build_fade_table(SUNSET_STOPS, args.fade_ticks)
@@ -196,9 +206,10 @@ def main():
     # Warp echo state. prev_display gets zoomed and dimmed each frame to
     # become the next frame's background-where-pixels-are-dead, producing
     # the warp-drive trails. Start at solid background.
-    warp_ys, warp_xs = _build_warp_map(
+    warp_y_float, warp_x_float = _build_warp_map_float(
         out_h, out_w, args.warp_zoom, (out_h - 1) / 2.0, (out_w - 1) / 2.0
     )
+    warp_rng = np.random.default_rng()
     bg_float = np.array(BG_COLOR, dtype=np.float32)
     prev_display = np.empty((out_h, out_w, 3), dtype=np.uint8)
     prev_display[:] = bg_pixel
@@ -216,11 +227,17 @@ def main():
             ruleset_out = ruleset.step(prev_frame=None, audio_layer=audio_layer)
             composed = compose(audio_layer, ruleset_out, mode=ruleset.compose_mode)
 
-            # Warp echo: zoom the previous frame outward from the center,
-            # then decay it toward the background. This is what fills the
-            # "dead pixel" slots — the result reads as content receding
-            # into the distance.
-            warped = prev_display[warp_ys, warp_xs].astype(np.float32)
+            # Warp echo: zoom the previous frame outward from the center
+            # with per-frame stochastic rounding (sub-pixel dither) so the
+            # near-focal region doesn't freeze into stair-step bands.
+            # Then decay toward the background. The result fills every
+            # "dead pixel" slot and reads as content receding outward.
+            j = args.warp_dither * 0.5
+            sy = np.round(warp_y_float + warp_rng.uniform(-j, j, warp_y_float.shape)).astype(np.int32)
+            sx = np.round(warp_x_float + warp_rng.uniform(-j, j, warp_x_float.shape)).astype(np.int32)
+            np.clip(sy, 0, out_h - 1, out=sy)
+            np.clip(sx, 0, out_w - 1, out=sx)
+            warped = prev_display[sy, sx].astype(np.float32)
             warped = warped * args.warp_dim + bg_float * (1.0 - args.warp_dim)
             warped = warped.clip(0, 255).astype(np.uint8)
 

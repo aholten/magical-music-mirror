@@ -6,8 +6,9 @@ DEVICE     ?= BlackHole 2ch
 RULESET    ?= conway11
 LAYOUT     ?= dual-mirror
 FADE_TICKS ?= 120
-WARP_ZOOM  ?= 1.04
-WARP_DIM   ?= 0.93
+WARP_ZOOM   ?= 1.04
+WARP_DIM    ?= 0.93
+WARP_DITHER ?= 1.0
 
 .PHONY: help run devices install clean
 
@@ -25,6 +26,8 @@ help:
 	@echo "  make run FADE_TICKS=600  # slow trails — 10s at 60fps"
 	@echo "  make run WARP_ZOOM=1.02  # subtle warp drift"
 	@echo "  make run WARP_ZOOM=1.08  # aggressive hyperspace"
+	@echo "  make run WARP_DITHER=0.0 # disable warp dithering"
+	@echo "  make run WARP_DITHER=2.0 # heavier film-grain texture"
 	@echo "  make run WARP_ZOOM=1.0 WARP_DIM=0.0   # disable warp entirely"
 	@echo "  make run DEVICE='Built-in Input'"
 
@@ -38,7 +41,8 @@ install: $(VENV)/bin/activate
 
 run: install
 	$(PY) app.py --device "$(DEVICE)" --ruleset $(RULESET) --layout $(LAYOUT) \
-		--fade-ticks $(FADE_TICKS) --warp-zoom $(WARP_ZOOM) --warp-dim $(WARP_DIM)
+		--fade-ticks $(FADE_TICKS) --warp-zoom $(WARP_ZOOM) --warp-dim $(WARP_DIM) \
+		--warp-dither $(WARP_DITHER)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"
