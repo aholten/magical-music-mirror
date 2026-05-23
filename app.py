@@ -60,13 +60,20 @@ def _build_fade_table(stops: list, ticks: int) -> np.ndarray:
     return table.clip(0, 255).astype(np.uint8)
 
 
-def _build_warp_map(h: int, w: int, zoom: float, focal_y: int, focal_x: int):
+def _build_warp_map(h: int, w: int, zoom: float, focal_y: float, focal_x: float):
     """Precompute integer source-index arrays for a per-frame zoom-outward
     warp. Sampling prev[warp_ys, warp_xs] gives a copy scaled by `zoom`
-    around the focal point: content recedes away from focal each tick."""
+    around the focal point: content recedes away from focal each tick.
+
+    focal_{y,x} are floats so the focal can sit between pixels — passing
+    the true geometric center ((h-1)/2, (w-1)/2) on an even-sized grid
+    produces a 2×2 stationary block at the center, symmetric across both
+    axes. We use np.round (not truncation) so sub-pixel displacements
+    near the focal round symmetrically rather than always toward zero.
+    """
     ys, xs = np.indices((h, w))
-    src_ys = (focal_y + (ys - focal_y) / zoom).astype(np.int32)
-    src_xs = (focal_x + (xs - focal_x) / zoom).astype(np.int32)
+    src_ys = np.round(focal_y + (ys - focal_y) / zoom).astype(np.int32)
+    src_xs = np.round(focal_x + (xs - focal_x) / zoom).astype(np.int32)
     np.clip(src_ys, 0, h - 1, out=src_ys)
     np.clip(src_xs, 0, w - 1, out=src_xs)
     return src_ys, src_xs
@@ -189,7 +196,9 @@ def main():
     # Warp echo state. prev_display gets zoomed and dimmed each frame to
     # become the next frame's background-where-pixels-are-dead, producing
     # the warp-drive trails. Start at solid background.
-    warp_ys, warp_xs = _build_warp_map(out_h, out_w, args.warp_zoom, out_h // 2, out_w // 2)
+    warp_ys, warp_xs = _build_warp_map(
+        out_h, out_w, args.warp_zoom, (out_h - 1) / 2.0, (out_w - 1) / 2.0
+    )
     bg_float = np.array(BG_COLOR, dtype=np.float32)
     prev_display = np.empty((out_h, out_w, 3), dtype=np.uint8)
     prev_display[:] = bg_pixel
