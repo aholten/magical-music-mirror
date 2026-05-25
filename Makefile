@@ -16,7 +16,12 @@ WARP_FOCUS_RANGE       ?= 0.6
 WARP_FOCUS_SMOOTHING   ?= 0.30
 WARP_FOCUS_TREBLE_BIAS ?= 3.0
 WARP_FADE_VOCAL        ?= 0.75
+CRT_SCANLINES          ?= 0.15
+CRT_ROLLING            ?= 0.10
+CRT_CHROMATIC          ?= 1
+CRT_BLOOM              ?= 0.25
 DEBUG                  ?=
+HUD                    ?=
 
 .PHONY: help run devices install clean
 
@@ -55,6 +60,10 @@ help:
 	@echo "  make run WARP_FADE_VOCAL=-0.5      # vocals partly kill warp"
 	@echo "  make run WARP_FADE_VOCAL=-1.0      # vocals fully kill warp (silence = full trails)"
 	@echo "  make run DEBUG=1                   # print live audio-feature values to stderr"
+	@echo "  make run HUD=1                     # on-screen live tuning HUD + focal_y marker"
+	@echo "  make run CRT_SCANLINES=0           # disable scanlines"
+	@echo "  make run CRT_SCANLINES=0.4 CRT_BLOOM=0.6 # heavier CRT look"
+	@echo "  make run CRT_SCANLINES=0 CRT_ROLLING=0 CRT_CHROMATIC=0 CRT_BLOOM=0 # all CRT off"
 	@echo "  make run WARP_ZOOM=1.0          # disable warp motion (no trails)"
 	@echo "  make run DEVICE='Built-in Input'"
 
@@ -75,7 +84,9 @@ run: install
 		--warp-focus-smoothing $(WARP_FOCUS_SMOOTHING) \
 		--warp-focus-treble-bias $(WARP_FOCUS_TREBLE_BIAS) \
 		--warp-fade-vocal $(WARP_FADE_VOCAL) \
-		$(if $(DEBUG),--debug)
+		--crt-scanlines $(CRT_SCANLINES) --crt-rolling $(CRT_ROLLING) \
+		--crt-chromatic $(CRT_CHROMATIC) --crt-bloom $(CRT_BLOOM) \
+		$(if $(DEBUG),--debug) $(if $(HUD),--hud)
 
 devices: install
 	$(PY) -c "import sounddevice as sd; print(sd.query_devices())"

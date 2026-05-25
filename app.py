@@ -114,6 +114,113 @@ def _build_fade_table(stops: list, ticks: int, curve: float = 1.0) -> np.ndarray
     return table.clip(0, 255).astype(np.uint8)
 
 
+def _draw_hud(
+    screen, font, audio_render, mult: float, focal_y: float,
+    out_h: int, scale: int, x_off: int, y_off: int, scaled_w: int,
+) -> None:
+    """Draw live tuning HUD: bars + numeric readouts for the audio
+    features driving the warp, plus a horizontal marker line at the
+    current focal_y so you can see where the warp center is."""
+    PAD = 10
+    LABEL_W = 28
+    BAR_W = 140
+    BAR_H = 12
+    ROW_H = 18
+    BG = (0, 0, 0)
+    BG_ALPHA = 170
+    FG = (230, 230, 230)
+    FILL = (90, 200, 255)
+    FILL_HOT = (255, 180, 60)
+
+    rows = [
+        ("V", float(audio_render.vocal_energy), FILL),  # raw mid-band level
+        ("C", float(audio_render.centroid), FILL),       # spectral centroid
+        ("M", float(mult), FILL_HOT),                    # current warp-fade multiplier
+    ]
+    panel_w = PAD + LABEL_W + BAR_W + 70 + PAD
+    panel_h = PAD * 2 + ROW_H * len(rows)
+    panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    panel.fill((*BG, BG_ALPHA))
+    for i, (label, value, color) in enumerate(rows):
+        y = PAD + i * ROW_H
+        panel.blit(font.render(label, True, FG), (PAD, y - 2))
+        v = max(0.0, min(1.0, value))
+        bar_x = PAD + LABEL_W
+        pygame.draw.rect(panel, (60, 60, 60), (bar_x, y, BAR_W, BAR_H))
+        pygame.draw.rect(panel, color, (bar_x, y, int(BAR_W * v), BAR_H))
+        panel.blit(font.render(f"{value:+.2f}", True, FG), (bar_x + BAR_W + 6, y - 2))
+    screen.blit(panel, (PAD, PAD))
+
+    # Horizontal line on the visualizer surface at the current focal_y.
+    line_y = y_off + int(focal_y * scale)
+    pygame.draw.line(
+        screen, (255, 180, 60),
+        (x_off, line_y), (x_off + scaled_w, line_y), 1,
+    )
+
+
+def _apply_crt(display: np.ndarray, frame_count: int, args) -> np.ndarray:
+    """Balatro-style CRT post-processing.
+
+    Operates at grid resolution; effects scale up with the pygame transform
+    so at higher RESOLUTION values scanlines + rolling bar become finer.
+    Returns a new array — does not mutate `display` (it's still needed as
+    the next frame's prev_display for warp feedback, and we don't want
+    scanlines compounding through the feedback loop).
+
+    Order matters: chromatic aberration first (color the image), bloom
+    second (glow it), scanlines + rolling bar last (overlay the screen).
+    """
+    h, w = display.shape[:2]
+
+    # Chromatic aberration: shift R left, B right. Simulates the slight
+    # red/blue fringing of a misaligned CRT shadow mask.
+    if args.crt_chromatic > 0:
+        s = max(1, int(args.crt_chromatic))
+        r = np.roll(display[..., 0], -s, axis=1)
+        b = np.roll(display[..., 2], s, axis=1)
+        display = np.stack([r, display[..., 1], b], axis=-1)
+
+    # Bloom: 5-point cross blur of bright pixels, added back to the frame.
+    # Only the brighter regions contribute, so dim/dead pixels stay clean.
+    if args.crt_bloom > 0:
+        f = display.astype(np.float32)
+        blurred = (
+            np.roll(f, 1, axis=0)
+            + np.roll(f, -1, axis=0)
+            + np.roll(f, 1, axis=1)
+            + np.roll(f, -1, axis=1)
+            + f
+        ) * 0.2
+        brightness = f.max(axis=-1, keepdims=True)
+        bloom_mask = np.clip((brightness - 80) / 120, 0, 1)
+        display = (f + blurred * bloom_mask * args.crt_bloom).clip(0, 255).astype(np.uint8)
+
+    # Scanlines: dim alternate rows. At RESOLUTION=1 these are chunky
+    # 8-pixel stripes after scaling; at RESOLUTION=4 they're 2-pixel
+    # fine scanlines that read more authentically CRT.
+    if args.crt_scanlines > 0:
+        mask = np.ones((h, 1, 1), dtype=np.float32)
+        mask[::2] = 1.0 - args.crt_scanlines
+        display = (display.astype(np.float32) * mask).clip(0, 255).astype(np.uint8)
+
+    # Rolling refresh bar: a smooth gaussian bump that scrolls vertically
+    # with a ~3-second period at 60fps, brightening the band it passes
+    # over. Mimics CRT vertical-sync drift.
+    if args.crt_rolling > 0:
+        period_frames = 180.0  # ~3 seconds at 60fps, resolution-independent
+        bar_pos = (frame_count % period_frames) / period_frames * h
+        bar_half_width = max(2.0, h * 0.12)
+        ys = np.arange(h, dtype=np.float32)
+        d = np.abs(ys - bar_pos)
+        d = np.minimum(d, h - d)  # wrap-aware distance
+        bump = np.exp(-((d / bar_half_width) ** 2))
+        scale = 1.0 + bump * args.crt_rolling
+        display = (display.astype(np.float32) * scale[:, None, None]).clip(0, 255).astype(np.uint8)
+
+    return display
+
+
 def _build_warp_map_float(h: int, w: int, zoom: float, focal_y: float, focal_x: float):
     """Precompute the FLOAT source coordinates for the warp.
 
@@ -210,6 +317,42 @@ def main():
         help="Print live audio-feature values (centroid, vocal_energy, "
         "stretched_vocal, fade_ticks_dyn) to stderr ~3× per second so "
         "you can verify what the modulators are actually reading.",
+    )
+    ap.add_argument(
+        "--crt-scanlines",
+        type=float,
+        default=0.15,
+        help="CRT scanline darkening on alternate grid rows. 0.0 = off, "
+        "0.15 = subtle (default), 0.4 = pronounced, 0.8 = aggressive.",
+    )
+    ap.add_argument(
+        "--crt-rolling",
+        type=float,
+        default=0.10,
+        help="Brightness boost of the slowly-scrolling refresh bar that "
+        "mimics CRT vertical-sync drift. 0.0 = off, 0.10 = subtle (default), "
+        "0.3 = obvious, 0.6 = strong band.",
+    )
+    ap.add_argument(
+        "--crt-chromatic",
+        type=int,
+        default=1,
+        help="Chromatic aberration: horizontal shift of R/B channels in "
+        "grid pixels. 0 = off, 1 = subtle (default), 2-3 = heavy fringing.",
+    )
+    ap.add_argument(
+        "--crt-bloom",
+        type=float,
+        default=0.25,
+        help="Bloom intensity — bright regions glow into neighbors. "
+        "0.0 = off, 0.25 = subtle (default), 0.6 = strong, 1.0 = saturated.",
+    )
+    ap.add_argument(
+        "--hud",
+        action="store_true",
+        help="Show a small on-screen HUD with live values of the audio "
+        "features driving the warp (vocal_energy, centroid, mult) plus "
+        "a horizontal marker at the current focal_y. Useful while tuning.",
     )
     ap.add_argument(
         "--fade-ticks",
@@ -322,6 +465,10 @@ def main():
     # device on macOS and deadlocks. We don't use pygame audio at all.
     print("[startup] pygame.display.init()", flush=True)
     pygame.display.init()
+    hud_font = None
+    if args.hud:
+        pygame.font.init()
+        hud_font = pygame.font.SysFont("Menlo", 14)
     print("[startup] opening window", flush=True)
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
     print("[startup] window open, entering main loop", flush=True)
@@ -443,12 +590,21 @@ def main():
             age = np.where(bar_edge, 0, age)
             display = fade_table[age]
             display = np.where(alive[..., None], display, warped)
-            prev_display = display
+            prev_display = display  # un-CRT'd — fed into next-frame warp
 
-            pygame.surfarray.blit_array(src_surface, np.transpose(display, (1, 0, 2)))
+            # CRT post-processing operates only on what's about to be shown,
+            # so scanlines + rolling bar don't compound into the warp echo.
+            display_render = _apply_crt(display, frame_count, args)
+
+            pygame.surfarray.blit_array(src_surface, np.transpose(display_render, (1, 0, 2)))
             scaled = pygame.transform.scale(src_surface, (scaled_w, scaled_h))
             screen.fill(bg_color)
             screen.blit(scaled, (x_off, y_off))
+            if hud_font is not None:
+                _draw_hud(
+                    screen, hud_font, audio_render, mult, focal_y,
+                    out_h, scale, x_off, y_off, scaled_w,
+                )
             pygame.display.flip()
             clock.tick(TARGET_FPS)
     finally:
