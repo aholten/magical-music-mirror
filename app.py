@@ -115,12 +115,15 @@ def _build_fade_table(stops: list, ticks: int, curve: float = 1.0) -> np.ndarray
 
 
 def _draw_hud(
-    screen, font, audio_render, mult: float, focal_y: float,
-    out_h: int, scale: int, x_off: int, y_off: int, scaled_w: int,
+    screen, font, audio_render, args, mult: float, focal_y: float,
+    stretched_vocal: float,
+    scale: int, x_off: int, y_off: int, scaled_w: int, scaled_h: int,
 ) -> None:
-    """Draw live tuning HUD: bars + numeric readouts for the audio
-    features driving the warp, plus a horizontal marker line at the
-    current focal_y so you can see where the warp center is."""
+    """Draw live tuning HUD: numeric readouts for the warp modulators,
+    a horizontal focal_y marker, and a translucent bracket on the actual
+    visualizer at the column/row range that contributes to vocal_energy
+    — so you can see exactly which bars are driving the warp fade and
+    how intensely they're driving it."""
     PAD = 10
     LABEL_W = 28
     BAR_W = 140
@@ -131,11 +134,13 @@ def _draw_hud(
     FG = (230, 230, 230)
     FILL = (90, 200, 255)
     FILL_HOT = (255, 180, 60)
+    VOCAL_TINT = (255, 180, 60)
 
     rows = [
-        ("V", float(audio_render.vocal_energy), FILL),  # raw mid-band level
-        ("C", float(audio_render.centroid), FILL),       # spectral centroid
-        ("M", float(mult), FILL_HOT),                    # current warp-fade multiplier
+        ("V", float(audio_render.vocal_energy), FILL),
+        ("S", float(stretched_vocal), FILL_HOT),
+        ("C", float(audio_render.centroid), FILL),
+        ("M", float(mult), FILL_HOT),
     ]
     panel_w = PAD + LABEL_W + BAR_W + 70 + PAD
     panel_h = PAD * 2 + ROW_H * len(rows)
@@ -151,12 +156,47 @@ def _draw_hud(
         panel.blit(font.render(f"{value:+.2f}", True, FG), (bar_x + BAR_W + 6, y - 2))
     screen.blit(panel, (PAD, PAD))
 
-    # Horizontal line on the visualizer surface at the current focal_y.
+    # focal_y marker line on the visualizer
     line_y = y_off + int(focal_y * scale)
     pygame.draw.line(
         screen, (255, 180, 60),
         (x_off, line_y), (x_off + scaled_w, line_y), 1,
     )
+
+    # Vocal-sensitivity bracket on the actual frequency chart. dual-mirror
+    # maps frequency to X (left=bass, right=treble); butterfly maps it to
+    # Y (bottom=bass, top=treble after the 90° CCW rotation). In both
+    # cases the bracket is mirrored to match the layout's symmetry so
+    # it lines up with the bars contributing to vocal_energy.
+    bars = audio_render.bars
+    vlo = audio_render._vocal_lo
+    vhi = audio_render._vocal_hi
+    alpha = int(50 + 180 * max(0.0, min(1.0, stretched_vocal)))
+    if args.layout == "dual-mirror":
+        px_per_bar = scaled_w / bars
+        x1 = x_off + int(vlo * px_per_bar)
+        x2 = x_off + int(vhi * px_per_bar)
+        thickness = 5
+        bracket = pygame.Surface((max(1, x2 - x1), thickness), pygame.SRCALPHA)
+        bracket.fill((*VOCAL_TINT, alpha))
+        screen.blit(bracket, (x1, y_off + scaled_h - thickness))  # bottom half indicator
+        # In dual-mirror the top half is a 180° rotation of the bottom,
+        # so the vocal columns land at mirrored x positions (center-symmetric).
+        x1m = x_off + scaled_w - (x2 - x_off)
+        x2m = x_off + scaled_w - (x1 - x_off)
+        bracket_top = pygame.Surface((max(1, x2m - x1m), thickness), pygame.SRCALPHA)
+        bracket_top.fill((*VOCAL_TINT, alpha))
+        screen.blit(bracket_top, (x1m, y_off))
+    elif args.layout == "butterfly":
+        # Frequency runs bottom→top after the CCW rotation.
+        px_per_bar = scaled_h / bars
+        y_lo = y_off + scaled_h - int(vhi * px_per_bar)
+        y_hi = y_off + scaled_h - int(vlo * px_per_bar)
+        thickness = 5
+        bracket = pygame.Surface((thickness, max(1, y_hi - y_lo)), pygame.SRCALPHA)
+        bracket.fill((*VOCAL_TINT, alpha))
+        screen.blit(bracket, (x_off, y_lo))
+        screen.blit(bracket, (x_off + scaled_w - thickness, y_lo))
 
 
 def _apply_crt(display: np.ndarray, frame_count: int, args) -> np.ndarray:
@@ -602,8 +642,8 @@ def main():
             screen.blit(scaled, (x_off, y_off))
             if hud_font is not None:
                 _draw_hud(
-                    screen, hud_font, audio_render, mult, focal_y,
-                    out_h, scale, x_off, y_off, scaled_w,
+                    screen, hud_font, audio_render, args, mult, focal_y,
+                    stretched_vocal, scale, x_off, y_off, scaled_w, scaled_h,
                 )
             pygame.display.flip()
             clock.tick(TARGET_FPS)
