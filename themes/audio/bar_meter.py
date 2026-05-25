@@ -20,6 +20,8 @@ class BarMeter:
         fft_size: int = 8192,
         centroid_smoothing: float = 0.30,
         centroid_treble_bias: float = 3.0,
+        vocal_band_lo: float = 200.0,
+        vocal_band_hi: float = 4000.0,
     ):
         # Asymmetric smoothing: attack governs how much the previous height
         # influences a NEW MAX (going up); release governs the descent. 0.0
@@ -56,8 +58,11 @@ class BarMeter:
         log_hi = np.log10(max(samplerate / 2.0, 41.0))
         def _bar_for_freq(f):
             return int(np.clip(round((np.log10(f) - log_lo) / (log_hi - log_lo) * (bars - 1)), 0, bars - 1))
-        self._vocal_lo = _bar_for_freq(200.0)
-        self._vocal_hi = _bar_for_freq(4000.0) + 1
+        # Clamp the requested band to the resolvable spectrum and ensure lo<hi.
+        lo_hz = max(40.0, min(samplerate / 2.0 - 1.0, float(vocal_band_lo)))
+        hi_hz = max(lo_hz + 1.0, min(samplerate / 2.0, float(vocal_band_hi)))
+        self._vocal_lo = _bar_for_freq(lo_hz)
+        self._vocal_hi = max(self._vocal_lo + 1, _bar_for_freq(hi_hz) + 1)
 
     def render(self, audio_frame: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
         h, w = shape

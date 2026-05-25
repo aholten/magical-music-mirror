@@ -456,6 +456,24 @@ def main():
         "cymbals yank the focal up more aggressively.",
     )
     ap.add_argument(
+        "--vocal-band-lo",
+        type=float,
+        default=200.0,
+        help="Low edge of the band used to compute vocal_energy (in Hz). "
+        "200 Hz catches vocal fundamentals + some low instrument body. "
+        "Raise to 250-300 to avoid male vocal fundamental bleed into bass; "
+        "raise higher to also drop tom/snare body.",
+    )
+    ap.add_argument(
+        "--vocal-band-hi",
+        type=float,
+        default=4000.0,
+        help="High edge of the vocal-energy band (in Hz). 4000 Hz is wide "
+        "and catches lots of percussion sibilance. Try 1500-2000 to "
+        "isolate vocal fundamentals + first formant only, or 1200 to "
+        "exclude cymbals/hats almost entirely.",
+    )
+    ap.add_argument(
         "--warp-fade-vocal",
         type=float,
         default=0.75,
@@ -496,6 +514,8 @@ def main():
         samplerate=args.samplerate,
         centroid_smoothing=args.warp_focus_smoothing,
         centroid_treble_bias=args.warp_focus_treble_bias,
+        vocal_band_lo=args.vocal_band_lo,
+        vocal_band_hi=args.vocal_band_hi,
     )
     ruleset = VARIANTS[args.ruleset]((out_h, out_w))
     print(f"[startup] ruleset {args.ruleset} initialized at {(out_h, out_w)}", flush=True)

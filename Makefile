@@ -16,6 +16,8 @@ WARP_FOCUS_RANGE       ?= 0.6
 WARP_FOCUS_SMOOTHING   ?= 0.30
 WARP_FOCUS_TREBLE_BIAS ?= 3.0
 WARP_FADE_VOCAL        ?= 0.75
+VOCAL_BAND_LO          ?= 200
+VOCAL_BAND_HI          ?= 4000
 CRT_SCANLINES          ?= 0.15
 CRT_ROLLING            ?= 0.10
 CRT_CHROMATIC          ?= 1
@@ -59,6 +61,8 @@ help:
 	@echo "  make run WARP_FADE_VOCAL=1.0       # vocals fully cause warp (silence = no trails)"
 	@echo "  make run WARP_FADE_VOCAL=-0.5      # vocals partly kill warp"
 	@echo "  make run WARP_FADE_VOCAL=-1.0      # vocals fully kill warp (silence = full trails)"
+	@echo "  make run VOCAL_BAND_LO=250 VOCAL_BAND_HI=1500  # narrow to vocal fundamentals"
+	@echo "  make run VOCAL_BAND_LO=300 VOCAL_BAND_HI=1200  # exclude cymbals/hats almost entirely"
 	@echo "  make run DEBUG=1                   # print live audio-feature values to stderr"
 	@echo "  make run HUD=1                     # on-screen live tuning HUD + focal_y marker"
 	@echo "  make run CRT_SCANLINES=0           # disable scanlines"
@@ -84,6 +88,7 @@ run: install
 		--warp-focus-smoothing $(WARP_FOCUS_SMOOTHING) \
 		--warp-focus-treble-bias $(WARP_FOCUS_TREBLE_BIAS) \
 		--warp-fade-vocal $(WARP_FADE_VOCAL) \
+		--vocal-band-lo $(VOCAL_BAND_LO) --vocal-band-hi $(VOCAL_BAND_HI) \
 		--crt-scanlines $(CRT_SCANLINES) --crt-rolling $(CRT_ROLLING) \
 		--crt-chromatic $(CRT_CHROMATIC) --crt-bloom $(CRT_BLOOM) \
 		$(if $(DEBUG),--debug) $(if $(HUD),--hud)
